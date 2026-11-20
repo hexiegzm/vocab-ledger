@@ -186,11 +186,11 @@ def load() -> dict:
     return migrate(data)
 
 
-def save(data: dict) -> None:
+def save(data: dict, backup: bool = True) -> None:
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     data["version"] = SCHEMA_VERSION
     data["updated_at"] = now_iso()
-    if DATA_FILE.exists():
+    if backup and DATA_FILE.exists():
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(DATA_FILE, BACKUP_DIR / f"words-{stamp}.json")
@@ -970,6 +970,277 @@ def cmd_doctor(args) -> int:
     return 0
 
 
+
+# ---------------------------------------------------------------- 命令：review（本地背词页）
+
+REVIEW_CSS = """
+body.review{background:#f2efe7; padding:26px 18px 90px; font-size:15px}
+.rev-wrap{max-width:1080px; margin:0 auto}
+.rev-head{display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap; margin-bottom:16px}
+.rev-head h1{font-size:26px; margin:2px 0 0}
+.rev-head .meta{font-size:12px; color:var(--muted)}
+.tabs{display:flex; gap:8px; margin-left:auto; flex-wrap:wrap}
+.tabs button{
+  font:inherit; font-size:13.5px; padding:8px 14px; border-radius:99px; cursor:pointer;
+  border:1px solid var(--line); background:#fffefa; color:#3f3a33;
+}
+.tabs button b{font-weight:600; margin-left:4px; color:var(--accent)}
+.tabs button.on{background:var(--accent); border-color:var(--accent); color:#fff}
+.tabs button.on b{color:#fff}
+.rev-bar{display:flex; gap:10px; align-items:center; margin:0 0 22px}
+.rev-bar .search{flex:1}
+.rev-bar .hint{font-size:12px; color:var(--muted); white-space:nowrap}
+.cards.rev{grid-template-columns:1fr 1fr; gap:14px}
+.card.rev{position:relative; padding:16px 18px 14px; transition:opacity .18s, transform .18s}
+.card.rev.active{outline:2px solid var(--accent); outline-offset:2px}
+.card.rev.leaving{opacity:0; transform:scale(.97)}
+.acts{position:absolute; right:12px; top:12px; display:flex; gap:6px}
+.act{
+  font:inherit; font-size:12px; line-height:1; padding:7px 10px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--line); background:#fff; color:#6f6a63; min-width:34px;
+}
+.act:hover{border-color:#c9c2b4}
+.act.star.on{background:#fdf3dd; border-color:#e3c27a; color:#8a5a00}
+.act.kill.on{background:var(--accent-soft); border-color:#cfe0d6; color:var(--accent)}
+.card .revmeta{font-size:11.5px; color:var(--muted); margin-bottom:6px}
+.card .w{font-size:22px}
+.empty-rev{color:var(--muted); font-size:14px; padding:30px 4px}
+"""
+
+REVIEW_JS = r"""
+const cnt = {
+  open: document.getElementById('cnt-open'),
+  star: document.getElementById('cnt-star'),
+  kill: document.getElementById('cnt-kill'),
+};
+let tab = 'open';
+
+function cards(){ return [...document.querySelectorAll('.card.rev')]; }
+
+function recount(){
+  const all = cards();
+  cnt.open.textContent = all.filter(c => c.dataset.learn === '0').length;
+  cnt.star.textContent = all.filter(c => c.dataset.star === '1').length;
+  cnt.kill.textContent = all.filter(c => c.dataset.learn === '1').length;
+}
+
+function match(card){
+  if (tab === 'open' && card.dataset.learn !== '0') return false;
+  if (tab === 'starred' && card.dataset.star !== '1') return false;
+  if (tab === 'learned' && card.dataset.learn !== '1') return false;
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  if (q && !card.textContent.toLowerCase().includes(q)) return false;
+  return true;
+}
+
+function apply(){
+  const all = cards();
+  let first = null;
+  all.forEach(c => {
+    const ok = match(c);
+    c.style.display = ok ? '' : 'none';
+    c.classList.remove('active');
+    if (ok && !first) first = c;
+  });
+  if (first) first.classList.add('active');
+  document.getElementById('empty').style.display = all.some(match) ? 'none' : '';
+}
+
+async function act(card, field){
+  const value = card.dataset[field] !== '1';
+  const body = { word: card.dataset.word, field: field === 'star' ? 'star' : 'learn', value: value };
+  try {
+    const r = await fetch('/api/mark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+  } catch (e) {
+    alert('写入失败：' + e.message);
+    return;
+  }
+  card.dataset[field] = value ? '1' : '0';
+  const btn = card.querySelector('.act.' + field);
+  btn.classList.toggle('on', value);
+  btn.textContent = field === 'star' ? (value ? '★' : '☆') : (value ? '斩了' : '斩');
+  card.classList.add('leaving');
+  setTimeout(() => { card.classList.remove('leaving'); recount(); apply(); }, 180);
+}
+
+document.querySelectorAll('.act').forEach(b => {
+  b.addEventListener('click', e => { e.stopPropagation(); act(b.closest('.card'), b.dataset.act); });
+});
+document.querySelectorAll('.tabs button').forEach(b => {
+  b.addEventListener('click', () => {
+    tab = b.dataset.tab;
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+    apply();
+  });
+});
+document.getElementById('q').addEventListener('input', apply);
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const active = document.querySelector('.card.rev.active') || cards().find(c => match(c));
+  if (!active) return;
+  if (e.key === '1') { e.preventDefault(); act(active, 'star'); }
+  if (e.key === '2') { e.preventDefault(); act(active, 'kill'); }
+});
+recount();
+apply();
+"""
+
+
+def render_review_page(data: dict) -> str:
+    words = data["words"]
+    ordered = sorted(
+        words,
+        key=lambda w: (1 if w.get("learned") else 0, 0 if w.get("starred") else 1,
+                       w.get("first_seen") or "", w["word"].lower()),
+    )
+    cards_html = []
+    for w in ordered:
+        collocs = "".join(f"<li>{esc(c)}</li>" for c in (w.get("collocations") or []) if c)
+        cards_html.append(
+            f'<article class="card rev" data-word="{esc(w["word"])}" '
+            f'data-learn="{1 if w.get("learned") else 0}" data-star="{1 if w.get("starred") else 0}">'
+            f'<div class="acts">'
+            f'<button class="act star{" on" if w.get("starred") else ""}" data-act="star">'
+            f'{"★" if w.get("starred") else "☆"}</button>'
+            f'<button class="act kill{" on" if w.get("learned") else ""}" data-act="kill">'
+            f'{"斩了" if w.get("learned") else "斩"}</button>'
+            f'</div>'
+            f'<div class="revmeta">{esc((w.get("tags") or ["未分类"])[0])} · {esc(w.get("first_seen") or "")}</div>'
+            f'<div class="card-head"><span class="w">{esc(w["word"])}</span>'
+            + (f'<span class="ph">{esc(w["phonetic"])}</span>' if w.get("phonetic") else "")
+            + (f'<span class="pos">{esc(w["pos"])}</span>' if w.get("pos") else "")
+            + "</div>"
+            + (f'<div class="zh">{esc(w["zh"])}</div>' if w.get("zh") else "")
+            + (f'<ul class="colloc">{collocs}</ul>' if collocs else "")
+            + (f'<div class="eg">{esc(w["example"])}</div>' if w.get("example") else "")
+            + (f'<div class="myerr">当初为什么记它：{esc(w["note"])}</div>' if w.get("note") else "")
+            + "</article>"
+        )
+
+    n_open = sum(1 for w in words if not w.get("learned"))
+    n_star = sum(1 for w in words if w.get("starred"))
+    n_kill = sum(1 for w in words if w.get("learned"))
+
+    return "".join([
+        "<!DOCTYPE html>",
+        '<html lang="zh-CN"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width,initial-scale=1">',
+        "<title>背词 · vocab-ledger</title>",
+        f"<style>{CSS}{REVIEW_CSS}</style></head>",
+        '<body class="review"><div class="rev-wrap">',
+        '<div class="rev-head">',
+        '<div><div class="kicker">vocab-ledger</div><h1>背词</h1>',
+        f'<div class="meta">{len(words)} 词 · 数据写入 data/words.json</div></div>',
+        '<div class="tabs">',
+        f'<button data-tab="open" class="on">待背<b id="cnt-open">{n_open}</b></button>',
+        f'<button data-tab="starred">收藏<b id="cnt-star">{n_star}</b></button>',
+        f'<button data-tab="learned">斩了<b id="cnt-kill">{n_kill}</b></button>',
+        "</div></div>",
+        '<div class="rev-bar">',
+        '<input id="q" class="search" type="search" placeholder="搜单词或释义…">',
+        '<span class="hint">键盘 1=收藏 2=斩 · 只监听 127.0.0.1</span>',
+        "</div>",
+        '<div class="cards rev">',
+        "".join(cards_html),
+        "</div>",
+        '<div class="empty-rev" id="empty" style="display:none">这个分类下没有词。</div>',
+        "</div>",
+        f"<script>{REVIEW_JS}</script>",
+        "</body></html>",
+    ])
+
+
+def cmd_review(args) -> int:
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    lock = threading.Lock()
+    data = load()
+    if DATA_FILE.exists():
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(DATA_FILE, BACKUP_DIR / f"words-{datetime.now():%Y%m%d-%H%M%S}-review.json")
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *a):  # 静音
+            pass
+
+        def _send(self, code: int, body: bytes, ctype: str) -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _guard(self) -> bool:
+            host = (self.headers.get("Host") or "").split(":")[0]
+            return host in ("127.0.0.1", "localhost")
+
+        def do_GET(self):
+            if not self._guard():
+                return self._send(403, b"forbidden", "text/plain; charset=utf-8")
+            if self.path.split("?")[0] not in ("/", "/index.html"):
+                return self._send(404, b"not found", "text/plain; charset=utf-8")
+            with lock:
+                page = render_review_page(load())
+            return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+        def do_POST(self):
+            if not self._guard() or self.path.split("?")[0] != "/api/mark":
+                return self._send(403, b"forbidden", "text/plain; charset=utf-8")
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                payload = json.loads(self.rfile.read(n) or b"{}")
+                word = str(payload.get("word", ""))
+                field = payload.get("field")
+                value = bool(payload.get("value"))
+                with lock:
+                    d = load()
+                    w = find_word(d, word)
+                    if w is None:
+                        return self._send(404, b'{"ok":false}', "application/json")
+                    if field == "star":
+                        w["starred"] = value
+                    elif field == "learn":
+                        w["learned"] = value
+                        w["learned_at"] = date.today().isoformat() if value else None
+                    else:
+                        return self._send(400, b'{"ok":false}', "application/json")
+                    save(d, backup=False)
+                log(f"review: {word} {field}={value}")
+                return self._send(200, b'{"ok":true}', "application/json")
+            except Exception as exc:
+                return self._send(500, json.dumps({"ok": False, "error": str(exc)}).encode(), "application/json")
+
+    port = args.port
+    for attempt in range(10):
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            break
+        except OSError:
+            port += 1
+    else:
+        raise SystemExit("找不到可用端口")
+
+    url = f"http://127.0.0.1:{port}/"
+    print(f"背词页已启动：{url}")
+    print("按 Ctrl+C 结束。数据直接写入 data/words.json。")
+    if args.open:
+        open_path(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n已停止。")
+    finally:
+        server.server_close()
+    return 0
+
+
 # ---------------------------------------------------------------- 入口
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1026,6 +1297,11 @@ def build_parser() -> argparse.ArgumentParser:
     w2.add_argument("--max-review", type=int, default=60)
     w2.add_argument("--max-weeks", type=int, default=8)
     w2.set_defaults(func=cmd_weekly)
+
+    rv = sub.add_parser("review", help="本地背词页：卡片 + 收藏/斩按钮，直写词库")
+    rv.add_argument("--port", type=int, default=8765, help="端口，默认 8765，占用则自动顺延")
+    rv.add_argument("--open", action="store_true", help="启动后打开浏览器")
+    rv.set_defaults(func=cmd_review)
 
     d = sub.add_parser("doctor", help="自检：词库、报告、计划任务是否正常")
     d.add_argument("--task", help="顺带检查一个 Windows 计划任务")

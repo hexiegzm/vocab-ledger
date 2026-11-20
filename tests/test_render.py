@@ -83,6 +83,21 @@ class RenderTest(unittest.TestCase):
         self.assertNotIn("<script>alert(1)</script>", doc)
         self.assertIn("&lt;script&gt;", doc)
 
+    def test_review_page_has_cards_and_buttons(self):
+        data = build()
+        doc = vocab.render_review_page(data)
+        self.assertEqual(doc.count('class="card rev"'), len(data["words"]))
+        self.assertIn('data-act="star"', doc)
+        self.assertIn('data-act="kill"', doc)
+        self.assertIn('data-word="mitigate"', doc)
+        self.assertIn("只监听 127.0.0.1", doc)
+
+    def test_review_page_escapes_html(self):
+        data = {"words": []}
+        vocab.upsert(data, {"word": "evil", "zh": "<script>alert(1)</script>"})
+        doc = vocab.render_review_page(data)
+        self.assertNotIn("<script>alert(1)</script>", doc)
+
     def test_stats_numbers(self):
         doc = vocab.render_html(build(), WEEK)
         self.assertIn('<div class="n">1</div><div class="l">本周新增</div>', doc)

@@ -82,6 +82,7 @@ python vocab.py list --learned                   # 背过的
 python vocab.py list --week 2026-W47             # 某周新增的
 python vocab.py stats                            # 总账
 python vocab.py weeks                            # 按周统计
+python vocab.py review --open                      # 本地背词页：卡片 + 收藏/斩按钮
 python vocab.py report --open                    # 出周报
 python vocab.py report --week 2026-W46 --open     # 补出旧周报
 python vocab.py weekly --open                     # 补漏 + 出当周（幂等，给调度用）
@@ -140,6 +141,28 @@ python vocab.py doctor --task VocabLedgerWeekly   # 自检：账本 / 报告 / �
 - `unlearn`：又想不起来了，放回清单，**`note` 不会被清掉**
 
 v2 删掉了 v1 那套「答对 +1、答错 −2、四连对算掌握」的掌握度模型。删掉的原因写在 [SPEC §2](SPEC.md#2-为什么没有掌握度) 里，一句话：**那套模型需要「答题」这个动作来喂数据，而实际使用里根本没有答题环节**——没有测验就没有正确答案，分数会永远停在 0，清单永远不缩小。
+
+## 在屏幕上背：review
+
+```bash
+python vocab.py review --open
+```
+
+启动一个**只监听 `127.0.0.1`** 的小服务，浏览器打开一页卡片：
+
+- 每张卡右上角两个按钮：**☆ 收藏** / **斩**
+- 点一下**直接写进 `data/words.json`**——不是浏览器缓存，清缓存不会丢
+- 三个标签页：待背 / 收藏 / 斩了，计数实时更新
+- 支持搜索；键盘 `1` 收藏、`2` 斩
+- 按 `Ctrl+C` 结束
+
+为什么不用 localStorage：那会造成「两套真相」——页面里斩了，文件里还在，下次生成的报告里全复活。
+
+| 场景 | 用什么 |
+|---|---|
+| 屏幕背词 | `review`（卡片 + 按钮） |
+| 翻查旧词 | 周报表二（表格，一屏扫十几个） |
+| 打印贴桌上 | 周报 PDF（表一 + 遮字自测） |
 
 ## 每周自动出报告
 
