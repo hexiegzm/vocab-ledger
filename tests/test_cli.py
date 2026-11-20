@@ -75,6 +75,17 @@ class CliTest(unittest.TestCase):
         vocab.main(["report"])
         self.assertEqual(vocab.main(["doctor"]), 0)
 
+    def test_add_tolerates_markdown_fence(self):
+        """聊天机器人返回的 JSON 常被 ```json 包着，不能因此报错。"""
+        fenced = self.tmp / "fenced.json"
+        fenced.write_text(
+            '```json\n[{"word": "nuance", "zh": "细微差别"}]\n```\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(vocab.main(["add", "--file", str(fenced)]), 0)
+        words = [w["word"] for w in vocab.load()["words"]]
+        self.assertIn("nuance", words)
+
 
 if __name__ == "__main__":
     unittest.main()

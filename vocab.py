@@ -289,6 +289,22 @@ def upsert(data: dict, rec: dict) -> tuple[dict, bool]:
 
 # ---------------------------------------------------------------- 命令：add
 
+def read_json(path: Path):
+    """读 JSON 文件，容忍 BOM、首尾空白、以及被 ```json 代码块包裹的情况。
+
+    后者很常见：让聊天机器人输出 JSON 时，它总爱加个 Markdown 代码块。
+    """
+    text = path.read_text(encoding="utf-8-sig").strip()
+    if text.startswith("```"):
+        first_nl = text.find("\n")
+        text = text[first_nl + 1:] if first_nl != -1 else ""
+        text = text.rstrip()
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+    return json.loads(text)
+
+
 def cmd_add(args) -> int:
     data = load()
     records: list[dict] = []
@@ -297,7 +313,7 @@ def cmd_add(args) -> int:
         path = Path(args.file)
         if not path.exists():
             raise SystemExit(f"找不到文件：{path}")
-        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        payload = read_json(path)
         if isinstance(payload, dict):
             payload = payload.get("words", [])
         if not isinstance(payload, list):
@@ -338,7 +354,7 @@ def cmd_mark(args) -> int:
     data = load()
     jobs: list[dict] = []
     if args.file:
-        payload = json.loads(Path(args.file).read_text(encoding="utf-8-sig"))
+        payload = read_json(Path(args.file))
         if isinstance(payload, dict):
             payload = payload.get("results", [])
         jobs.extend(payload)

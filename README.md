@@ -90,9 +90,26 @@ python vocab.py doctor --task VocabLedgerWeekly   # 自检：账本 / 报告 / �
 
 | 文件 | 作用 |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | 仓库内的工作约定。`AGENTS.md` 是跨工具的事实标准，Claude Code、Codex、Cursor、DSH 都读——AI 进这个目录就自动知道该干什么 |
+| [`AGENTS.md`](AGENTS.md) | 仓库内的工作约定。`AGENTS.md` 是跨工具的事实标准，Codex、DSH、Cursor 等直接读——AI 进这个目录就自动知道该干什么 |
+| [`CLAUDE.md`](CLAUDE.md) | 给 Claude Code 的入口（它默认读这个名字，不读 `AGENTS.md`），内容用 `@AGENTS.md` 引用，不重复维护 |
+| [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | 给 GitHub Copilot 的入口 |
 | [`skills/vocab-ledger/SKILL.md`](skills/vocab-ledger/SKILL.md) | 同一套流程的 skill 版，让 AI 在**任何对话**里都能想起「该记账了」，不必先进这个目录 |
+| [`prompts/universal.md`](prompts/universal.md) | 给**不能读写文件**的 AI（豆包、网页版 ChatGPT、手机 App）——一段提示词，让它输出符合 SPEC 的 JSON，你复制一次即可入库 |
 | [`SPEC.md`](SPEC.md) | 协议本体：字段、判定公式、渲染契约。换语言实现对照这份 |
+
+### 哪些 AI 能自动记
+
+判断标准只有两条：**读不读项目里的约定文件**、**有没有终端能执行命令**。
+
+| 工具 | 自动记录 | 说明 |
+|---|---|---|
+| Codex CLI / DSH / Cursor / Gemini CLI | ✅ | 读 `AGENTS.md`（个别版本用 `GEMINI.md`，指向它即可） |
+| Claude Code | ✅ | 读 `CLAUDE.md`，本仓库已提供 |
+| GitHub Copilot | ✅ | 读 `.github/copilot-instructions.md`，本仓库已提供 |
+| 豆包 / 网页版 ChatGPT / Kimi | ⚠️ 半自动 | 没有本地文件与终端权限。用 [`prompts/universal.md`](prompts/universal.md)，它批改输出 JSON，你贴一次 |
+| 手机 App | ❌ | 同上，且没有命令行 |
+
+最后两行不是配置问题，是权限模型问题。但**半自动和全自动产出的账本是完全一样的**——区别只是「复制粘贴一次」。这就是协议优先的好处：不管对面是哪个模型，只要能吐出符合 SPEC 的 JSON，就能接进来。
 
 典型的一轮对话：
 
@@ -184,10 +201,12 @@ vocab-ledger/
 ├─ vocab.py                     参考实现（零依赖，单文件）
 ├─ SPEC.md                      协议：格式、判定、渲染契约
 ├─ AGENTS.md                    给 AI 的仓库内约定
+├─ CLAUDE.md                    Claude Code 入口（引用 AGENTS.md）
 ├─ skills/vocab-ledger/SKILL.md 同一流程的 skill 版
+├─ prompts/universal.md         给不能读写文件的 AI 用的提示词
 ├─ examples/words.sample.json   可直接导入的样例
 ├─ docs/                        调度说明、预览图
-└─ tests/                       32 个标准库单元测试
+└─ tests/                       44 个标准库单元测试
 ```
 
 ## 开发
