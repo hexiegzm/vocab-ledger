@@ -161,7 +161,7 @@ vocab-ledger/
 ├─ skills/vocab-ledger/SKILL.md 同一流程的 skill 版
 ├─ examples/words.sample.json   可直接导入的样例
 ├─ docs/                        调度说明、预览图
-└─ tests/                       31 个标准库单元测试
+└─ tests/                       32 个标准库单元测试
 ```
 
 ## 开发
