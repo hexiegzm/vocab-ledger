@@ -76,6 +76,19 @@ class CliTest(unittest.TestCase):
         vocab.main(["report"])
         self.assertEqual(vocab.main(["doctor"]), 0)
 
+    def test_star_and_unstar(self):
+        vocab.main(["add", "--file", str(self.batch)])
+        self.assertEqual(vocab.main(["star", "mitigate"]), 0)
+        self.assertTrue(vocab.find_word(vocab.load(), "mitigate")["starred"])
+        self.assertEqual(vocab.main(["star", "nonexistent"]), 2)
+        self.assertEqual(vocab.main(["unstar", "mitigate"]), 0)
+        self.assertFalse(vocab.find_word(vocab.load(), "mitigate")["starred"])
+
+    def test_learn_alias_kill(self):
+        vocab.main(["add", "--file", str(self.batch)])
+        self.assertEqual(vocab.main(["kill", "resilient"]), 0)
+        self.assertTrue(vocab.find_word(vocab.load(), "resilient")["learned"])
+
     def test_add_tolerates_markdown_fence(self):
         """聊天机器人返回的 JSON 常被 ```json 包着，不能因此报错。"""
         fenced = self.tmp / "fenced.json"

@@ -35,16 +35,25 @@ python vocab.py add --file seed/week47.json
 - ✅ `「稳步推进」整段没译出来`
 - ❌ `错了`、`不熟`、`有错误`、`需要注意`
 
-### 3. 用户说「会了」，才 `learn`
+### 3. 用户说「会了 / 斩了」，才 `learn`
 
 ```bash
-python vocab.py learn mitigate nuance     # 用户明确说背完了/会了
+python vocab.py learn mitigate nuance     # 别名：kill
 python vocab.py unlearn mitigate          # 用户说又忘了
 ```
 
-**不要替用户判定「他应该会了」。** 只有他明确说背完、会了，才标 `learned`。你擅自标记，等于把他的清单删空。
+**不要替用户判定「他应该会了」。** 只有他明确说背完、会了、斩了，才标 `learned`。你擅自标记，等于把他的清单删空。
 
-### 4. 不要编音标
+### 4. 用户说「收藏」，才 `star`
+
+```bash
+python vocab.py star mitigate nuance      # 进收藏夹
+python vocab.py unstar mitigate
+```
+
+收藏 ≠ 斩。收藏是「这个写作时能用，我想留着」，斩是「背过了」。**斩掉的词收藏后仍在收藏夹里**——这正是它的用途。
+
+### 5. 不要编音标
 
 没把握就把 `--phonetic` 留空。写错的音标比没有更糟——他会照着错音背。
 
@@ -70,5 +79,5 @@ python vocab.py unlearn mitigate          # 用户说又忘了
 ```
 记了 5 个词、2 条错因。
 最该先背：mitigate（「减轻」没译出来）、nuance（细微差别）。
-周报里会出现在「环境」和「写作搭配」两组。
+周报里会出现在「环境」和「写作搭配」两组；收藏了 resilient。
 ```

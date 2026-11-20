@@ -52,8 +52,10 @@ python vocab.py add "resilient" --zh "有韧性的" --pos adj. \
 ### 第三步：用户说「会了」时划掉
 
 ```bash
-python vocab.py learn resilient        # 背完了，不再出现在周报清单
+python vocab.py learn resilient        # 斩：背完了，不再出现在表二（别名 kill）
 python vocab.py unlearn resilient      # 又忘了，放回去（note 保留）
+python vocab.py star resilient         # 收藏：进收藏夹，斩了也还在
+python vocab.py unstar resilient
 ```
 
 **这是他唯一的进度信号，你不要替他按。**

@@ -182,6 +182,7 @@ def load() -> dict:
         w.setdefault("tags", [])
         w.setdefault("learned", False)
         w.setdefault("learned_at", None)
+        w.setdefault("starred", False)
     return migrate(data)
 
 
@@ -229,6 +230,7 @@ def upsert(data: dict, rec: dict) -> tuple[dict, bool]:
             "note": "",
             "learned": False,
             "learned_at": None,
+            "starred": False,
         }
         data["words"].append(existing)
 
@@ -335,6 +337,48 @@ def cmd_learn(args) -> int:
     return 0
 
 
+def cmd_star(args) -> int:
+    data = load()
+    targets = _collect_words(args)
+    if not targets:
+        raise SystemExit("没指定要收藏的词。")
+    done, missing = [], []
+    for word in targets:
+        w = find_word(data, word)
+        if w is None:
+            missing.append(word)
+            continue
+        if not w.get("starred"):
+            w["starred"] = True
+            done.append(w["word"])
+    if done:
+        save(data)
+        log(f"star: {done}")
+    total = sum(1 for w in data["words"] if w.get("starred"))
+    print(f"⭐ 收藏 {len(done)} 个；收藏夹共 {total} 个。")
+    if missing:
+        print(f"⚠️  词库里没有：{', '.join(missing)}（先用 add 添加）", file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_unstar(args) -> int:
+    data = load()
+    targets = _collect_words(args)
+    done = []
+    for word in targets:
+        w = find_word(data, word)
+        if w and w.get("starred"):
+            w["starred"] = False
+            done.append(w["word"])
+    if done:
+        save(data)
+        log(f"unstar: {done}")
+    total = sum(1 for w in data["words"] if w.get("starred"))
+    print(f"取消收藏 {len(done)} 个；收藏夹还剩 {total} 个。")
+    return 0
+
+
 def cmd_unlearn(args) -> int:
     data = load()
     targets = _collect_words(args)
@@ -357,7 +401,9 @@ def cmd_unlearn(args) -> int:
 def cmd_list(args) -> int:
     data = load()
     words = data["words"]
-    if args.learned:
+    if args.starred:
+        words = [w for w in words if w.get("starred")]
+    elif args.learned:
         words = [w for w in words if w.get("learned")]
     elif not args.all:
         words = [w for w in words if not w.get("learned")]
@@ -376,13 +422,14 @@ def cmd_list(args) -> int:
         return 0
 
     words = sorted(words, key=lambda w: (w.get("first_seen") or "", w["word"].lower()))
-    print(f"{pad('单词', 22)}{pad('状态', 8)}{pad('释义', 30)}标签")
+    print(f"{pad('单词', 22)}{pad('状态', 8)}{pad('释义', 28)}标签")
     print("-" * 88)
     for w in words:
+        star = "★ " if w.get("starred") else ""
         print(
-            f"{pad(w['word'], 22)}"
+            f"{pad(star + w['word'], 22)}"
             f"{pad(STATE_ZH['learned' if w.get('learned') else 'open'], 8)}"
-            f"{pad(cut(w.get('zh') or '—', 28), 30)}"
+            f"{pad(cut(w.get('zh') or '—', 26), 28)}"
             f"{'/'.join(w.get('tags') or []) or '—'}"
         )
     print("-" * 88)
@@ -403,6 +450,7 @@ def cmd_stats(args) -> int:
     print(f"背过了       {len(words) - open_count}")
     print(f"本周新增     {len(new_this)}   （{week_key(mon)} {mon}~{sun}）")
     print(f"本周背完     {len(learned_this)}")
+    print(f"收藏夹       {sum(1 for w in words if w.get('starred'))}")
     return 0
 
 
@@ -482,6 +530,7 @@ td.w{font-family:Georgia,"Cambria",serif; font-size:16px; font-weight:600}
 .grid .small{font-size:12.5px; color:#3f3a33}
 .grid .tagcell{font-size:12px; color:var(--accent); white-space:nowrap}
 .grid .date{white-space:nowrap; color:var(--muted)}
+.star{color:#c9962b; margin-right:3px; font-size:13px}
 .grid tbody tr:nth-child(even){background:#fcfaf4}
 .grid td.w{font-size:15.5px}
 input.search{
@@ -517,6 +566,11 @@ footer{margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font
 
 def esc(s) -> str:
     return html.escape(str(s or ""), quote=True)
+
+
+def _wcell(w: dict) -> str:
+    star = '<span class="star">★</span>' if w.get("starred") else ""
+    return f'<td class="w">{star}{esc(w["word"])}</td>'
 
 
 def _cell(w: dict, text: str, cls: str = "") -> str:
@@ -578,7 +632,7 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
                  '<th style="width:16%">为什么记它</th><th style="width:10%">日期</th></tr></thead><tbody>')
         for w in week_words:
             h.append(
-                f'<tr><td class="w">{esc(w["word"])}</td>'
+                f'<tr>' + _wcell(w)
                 + _cell(w, esc(w.get("phonetic") or ""), "ph")
                 + _cell(w, esc(w.get("zh") or "—"))
                 + _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")
@@ -612,7 +666,7 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
                  '<th style="width:12%">标签</th><th style="width:11%">记录于</th></tr></thead><tbody>')
         for w in shown:
             h.append(
-                f'<tr><td class="w">{esc(w["word"])}</td>'
+                f'<tr>' + _wcell(w)
                 + _cell(w, esc(w.get("phonetic") or ""), "ph")
                 + _cell(w, esc(w.get("zh") or "—"))
                 + _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")
@@ -627,15 +681,38 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
         h.append(f'<p class="hint">另有 {len(open_words) - len(shown)} 个词未列入本期（上限 {max_review}），'
                  f'可用 <code>vocab.py list</code> 查看，或调大 <code>--max-review</code>。</p>')
 
-    # ---------------- 本周背完 ----------------
-    h.append(f'<h2>本周背完 <span class="count">{len(learned_week)} 词</span></h2>')
+    # ---------------- 收藏夹 ----------------
+    starred = sorted([w for w in words if w.get("starred")], key=lambda w: w["word"].lower())
+    h.append(f'<h2>收藏夹 <span class="count">{len(starred)} 词</span></h2>')
+    h.append('<p class="hint">★ 是你特意留下的词，斩掉之后仍然在这里。写作文前扫一眼。</p>')
+    if starred:
+        h.append('<table class="grid"><thead><tr>'
+                 '<th style="width:18%">单词</th><th style="width:14%">音标</th>'
+                 '<th style="width:22%">释义</th><th style="width:32%">搭配</th>'
+                 '<th style="width:14%">状态</th></tr></thead><tbody>')
+        for w in starred:
+            h.append(
+                f'<tr>' + _wcell(w)
+                + _cell(w, esc(w.get("phonetic") or ""), "ph")
+                + _cell(w, esc(w.get("zh") or "—"))
+                + _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")
+                + _cell(w, "斩了" if w.get("learned") else "还没背", "tagcell")
+                + "</tr>"
+            )
+        h.append("</tbody></table>")
+    else:
+        h.append('<div class="empty">还没有收藏的词。背的时候觉得「这个写作能用」，说一句「收藏 XX」就行。</div>')
+
+    # ---------------- 斩词 ----------------
+    killed_total = len(words) - len(open_words)
+    h.append(f'<h2>斩词 <span class="count">本周 {len(learned_week)} 词 · 累计 {killed_total} 词</span></h2>')
     if learned_week:
         h.append('<div class="chips">')
         for w in learned_week:
             h.append(f'<span class="chip"><span class="s">{esc(w["word"])}</span> {esc(w.get("zh") or "")}</span>')
         h.append("</div>")
     else:
-        h.append('<div class="empty">这周还没标过「背过了」。背完记得说一声，否则它会一直留在表二里。</div>')
+        h.append('<div class="empty">这周还没斩过词。背完说一句「XX 斩了」，它就从表二消失。</div>')
 
     # ---------------- 遮字自测 ----------------
     h.append('<h2 class="page-break">遮字自测 <span class="count">盖上右列，逐词默写</span></h2>')
@@ -644,8 +721,9 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
         h.append('<table class="quiz"><thead><tr><th style="width:26%">单词</th><th style="width:20%">音标</th>'
                  '<th style="width:54%">释义 / 搭配（自己写）</th></tr></thead><tbody>')
         for w in shown:
+            star = '<span class="star">★</span>' if w.get("starred") else ""
             h.append(
-                f'<tr><td class="w">{esc(w["word"])}</td>'
+                f'<tr><td class="w">{star}{esc(w["word"])}</td>'
                 f'<td class="ph">{esc(w.get("phonetic") or "")}</td>'
                 f'<td class="blank"></td></tr>'
             )
@@ -913,8 +991,11 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--date", default="", help="录入日期 YYYY-MM-DD")
     a.set_defaults(func=cmd_add)
 
-    for name, func, hlp in (("learn", cmd_learn, "标记背过了"), ("unlearn", cmd_unlearn, "放回未背")):
-        s = sub.add_parser(name, help=hlp)
+    for name, func, hlp in (("learn", cmd_learn, "斩：标记背过了（别名 kill）"),
+                            ("unlearn", cmd_unlearn, "放回未背"),
+                            ("star", cmd_star, "收藏：留在收藏夹"),
+                            ("unstar", cmd_unstar, "取消收藏")):
+        s = sub.add_parser(name, help=hlp, aliases=(["kill"] if name == "learn" else []))
         s.add_argument("words", nargs="*", help="一个或多个单词")
         s.add_argument("--file", help="批量 JSON")
         s.add_argument("--date", default="", help="日期 YYYY-MM-DD，默认今天")
@@ -923,6 +1004,7 @@ def build_parser() -> argparse.ArgumentParser:
     l = sub.add_parser("list", help="列出词库")
     l.add_argument("--all", action="store_true", help="连背过的一起列")
     l.add_argument("--learned", action="store_true", help="只看背过的")
+    l.add_argument("--starred", action="store_true", help="只看收藏的")
     l.add_argument("--tag")
     l.add_argument("--week", help="按录入周筛选，如 2026-W47")
     l.add_argument("--json", action="store_true")

@@ -73,7 +73,10 @@ vocab.py report ──► 单文件 HTML ──► 打印，贴桌上
 python vocab.py add --file seed/week47.json      # 批量录入（幂等，重复导入不会重复计）
 python vocab.py add resilient --zh 有韧性的 --tag 写作搭配 --note "写成 resistent"
 python vocab.py learn resilient                  # 背完了，从清单里划掉
+python vocab.py kill resilient                   # learn 的别名，一个意思
 python vocab.py unlearn resilient                # 又忘了，放回去
+python vocab.py star resilient                   # 收藏：留在收藏夹
+python vocab.py list --starred                   # 看收藏夹
 python vocab.py list                             # 还没背的
 python vocab.py list --learned                   # 背过的
 python vocab.py list --week 2026-W47             # 某周新增的
@@ -132,7 +135,8 @@ python vocab.py doctor --task VocabLedgerWeekly   # 自检：账本 / 报告 / �
              unlearn
 ```
 
-- `learn`：背完了，下次报告里不再出现
+- `learn`（别名 `kill`）：斩掉，下次报告的表二里不再出现
+- `star`：收藏，进收藏夹；**斩了也还在**，写作文前回查用
 - `unlearn`：又想不起来了，放回清单，**`note` 不会被清掉**
 
 v2 删掉了 v1 那套「答对 +1、答错 −2、四连对算掌握」的掌握度模型。删掉的原因写在 [SPEC §2](SPEC.md#2-为什么没有掌握度) 里，一句话：**那套模型需要「答题」这个动作来喂数据，而实际使用里根本没有答题环节**——没有测验就没有正确答案，分数会永远停在 0，清单永远不缩小。

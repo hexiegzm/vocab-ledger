@@ -38,7 +38,7 @@ class RenderTest(unittest.TestCase):
 
     def test_all_sections_present(self):
         doc = vocab.render_html(build(), WEEK)
-        for heading in ("表一 · 本周新增", "表二 · 不会的词库", "本周背完", "遮字自测", "本周建议"):
+        for heading in ("表一 · 本周新增", "表二 · 不会的词库", "收藏夹", "斩词", "遮字自测", "本周建议"):
             self.assertIn(heading, doc, f"缺少小节：{heading}")
 
     def test_week_filter_applies_to_new_words(self):
@@ -58,11 +58,11 @@ class RenderTest(unittest.TestCase):
         w["learned"] = True
         w["learned_at"] = "2026-11-18"
         doc = vocab.render_html(data, WEEK)
-        list_section = doc.split("表二 · 不会的词库", 1)[1].split("本周背完", 1)[0]
+        list_section = doc.split("表二 · 不会的词库", 1)[1].split("收藏夹", 1)[0]
         quiz = doc.split("遮字自测", 1)[1]
         self.assertNotIn("mitigate", list_section)      # 不再出现在待背清单
         self.assertNotIn("mitigate", quiz)              # 也不再出现在自测表
-        self.assertIn("本周背完", doc)
+        self.assertIn("斩词", doc)
         self.assertIn('<span class="s">mitigate</span>', doc)  # 出现在"本周背完"里
 
     def test_quiz_has_one_row_per_open_word(self):
@@ -87,6 +87,18 @@ class RenderTest(unittest.TestCase):
         doc = vocab.render_html(build(), WEEK)
         self.assertIn('<div class="n">1</div><div class="l">本周新增</div>', doc)
         self.assertIn('<div class="n">2</div><div class="l">词库总量</div>', doc)
+
+    def test_starred_word_stays_in_favorites_after_kill(self):
+        data = build()
+        w = vocab.find_word(data, "mitigate")
+        w["starred"] = True
+        w["learned"] = True
+        w["learned_at"] = "2026-11-18"
+        doc = vocab.render_html(data, WEEK)
+        fav = doc.split("收藏夹", 1)[1].split("斩词", 1)[0]
+        self.assertIn("mitigate", fav)
+        self.assertIn("斩了", fav)
+        self.assertIn('<span class="star">★</span>', doc)
 
     def test_truncation_hint_when_over_limit(self):
         data = {"words": []}
