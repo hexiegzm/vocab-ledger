@@ -59,6 +59,22 @@ class CliTest(unittest.TestCase):
         self.assertEqual(vocab.main(["list", "--status", "learning"]), 0)
         self.assertEqual(vocab.main(["weeks"]), 0)
 
+    def test_report_writes_heartbeat(self):
+        vocab.main(["add", "--file", str(self.batch)])
+        vocab.main(["report"])
+        heartbeat = vocab.LOG_DIR / "last-report.json"
+        self.assertTrue(heartbeat.exists())
+        info = json.loads(heartbeat.read_text(encoding="utf-8"))
+        self.assertEqual(info["words"], 2)
+        self.assertRegex(info["week"], r"^\d{4}-W\d{2}$")
+        self.assertIn("at", info)
+
+    def test_doctor_never_crashes(self):
+        self.assertIn(vocab.main(["doctor"]), (0, 1))
+        vocab.main(["add", "--file", str(self.batch)])
+        vocab.main(["report"])
+        self.assertEqual(vocab.main(["doctor"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

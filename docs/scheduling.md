@@ -93,6 +93,7 @@ Unregister-ScheduledTask -TaskName "VocabLedgerWeekly" -Confirm:$false       # �
 
 ## 让它更靠谱一点
 
-- 报告生成失败时，`report` 的退出码非 0；调度器可以接告警（`|| mail ...`）。
+- **先自检**：`python vocab.py doctor --task <任务名>` 一次看完数据、报告心跳、任务的下次运行时间与上次退出码。
+- 报告生成失败时，`report` 的退出码非 0；调度器可以接告警（`|| mail ...`），Windows 可以在 `weekly.cmd` 里判断 `errorlevel` 后重试一次。
 - 想留档就每周换个文件名：`report --out reports/$(date +%Y-W%V).html`。
 - 想在手机上看到，把 `reports/` 放进任何同步盘，或起个静态服务——但那就违背「不联网」了，自行取舍。

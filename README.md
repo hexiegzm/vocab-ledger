@@ -80,6 +80,7 @@ python vocab.py stats                            # 总账
 python vocab.py weeks                            # 按周统计
 python vocab.py report --open                    # 出周报
 python vocab.py report --week 2026-W46 --open     # 补出旧周报
+python vocab.py doctor --task VocabLedgerWeekly   # 自检：账本 / 报告 / 计划任务
 ```
 
 ## 让 AI 帮你记
@@ -123,6 +124,23 @@ python vocab.py report --week 2026-W46 --open     # 补出旧周报
 ```
 
 Windows、macOS 的写法，以及「为什么不内置调度器」，见 [docs/scheduling.md](docs/scheduling.md)。
+
+**不确定它到底跑没跑？** 一条命令看全：
+
+```
+$ python vocab.py doctor --task VocabLedgerWeekly
+生词账本自检 · /path/to/vocab-ledger
+────────────────────────────────────────────────────────
+✓ Python       3.12.4
+✓ 数据文件     data/words.json  (13.0 KB)
+✓ 词库         42 个词（待巩固 17 / 复习中 9 / 已掌握 16）
+✓ 最近出报告   2026-11-22 20:00（2026-W47，20 词，2 天前）
+✓ 计划任务     VocabLedgerWeekly  Ready  下次 2026-11-29 20:00  上次 2026-11-22 20:00  exit=0
+────────────────────────────────────────────────────────
+一切正常。
+```
+
+报告每次生成都会写一个心跳文件（`logs/last-report.json`），`doctor` 靠它判断「调度还活着吗」，而不是靠你回想。
 
 ## 报告里有什么
 

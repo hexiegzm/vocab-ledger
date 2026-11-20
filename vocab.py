@@ -54,6 +54,7 @@ import argparse
 import html
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -725,6 +726,15 @@ def cmd_report(args) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(doc, encoding="utf-8")
     log(f"report: {out} week={week_key(monday)} words={len(data['words'])}")
+    # 心跳：记录「最后一次成功出报告」的时间，doctor 用它判断调度是否还活着
+    heartbeat = LOG_DIR / "last-report.json"
+    heartbeat.parent.mkdir(parents=True, exist_ok=True)
+    heartbeat.write_text(json.dumps({
+        "at": now_iso(),
+        "week": week_key(monday),
+        "words": len(data["words"]),
+        "path": str(out),
+    }, ensure_ascii=False), encoding="utf-8")
     print(f"✅ 周报已生成：{out}")
     if args.open:
         open_path(out)
@@ -742,6 +752,117 @@ def open_path(path: Path) -> None:
             subprocess.Popen(["xdg-open", str(path)])
     except Exception as exc:  # pragma: no cover
         print(f"（自动打开失败：{exc}，请手动打开 {path}）", file=sys.stderr)
+
+
+# ---------------------------------------------------------------- 命令：doctor
+
+def task_info(name: str) -> dict:
+    """查询 Windows 计划任务的状态。非 Windows 或查不到时返回 {'error': ...}。"""
+    if not sys.platform.startswith("win"):
+        return {"error": "当前不是 Windows，跳过计划任务检查"}
+    safe = "".join(ch for ch in name if ch.isalnum() or ch in "_-")
+    if not safe:
+        return {"error": "任务名不合法"}
+    ps = (
+        f"$t = Get-ScheduledTask -TaskName '{safe}' -ErrorAction Stop; "
+        "$i = $t | Get-ScheduledTaskInfo; "
+        "$n = ''; if ($i.NextRunTime) { $n = $i.NextRunTime.ToString('yyyy-MM-dd HH:mm') }; "
+        "$l = ''; if ($i.LastRunTime -and $i.LastRunTime.Year -gt 2000) { $l = $i.LastRunTime.ToString('yyyy-MM-dd HH:mm') }; "
+        "[pscustomobject]@{State=[string]$t.State; Next=$n; Last=$l; Code=[int]$i.LastTaskResult} "
+        "| ConvertTo-Json -Compress"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, text=True, timeout=30,
+        )
+    except Exception as exc:
+        return {"error": f"查询失败：{exc}"}
+    if r.returncode != 0:
+        msg = (r.stderr or "").strip().splitlines()
+        return {"error": msg[0][:160] if msg else "任务不存在或无权访问"}
+    try:
+        return json.loads(r.stdout.strip())
+    except Exception:
+        return {"error": "无法解析计划任务输出"}
+
+
+def cmd_doctor(args) -> int:
+    rows: list[tuple[str, str, str]] = []
+    problems = warnings = 0
+
+    def add(level: str, label: str, value: str) -> None:
+        nonlocal problems, warnings
+        if level == "bad":
+            problems += 1
+        elif level == "warn":
+            warnings += 1
+        rows.append((level, label, value))
+
+    add("ok" if sys.version_info >= (3, 10) else "warn", "Python",
+        platform.python_version() + ("" if sys.version_info >= (3, 10) else "（建议 3.10+）"))
+
+    if DATA_FILE.exists():
+        add("ok", "数据文件", f"{DATA_FILE}  ({DATA_FILE.stat().st_size / 1024:.1f} KB)")
+    else:
+        add("warn", "数据文件", f"{DATA_FILE} 不存在（还没有生词）")
+
+    try:
+        data = load()
+        words = data["words"]
+        cnt = {s: sum(1 for w in words if w["status"] == s) for s in STATUS_ORDER}
+        add("ok", "词库", f"{len(words)} 个词（待巩固 {cnt['learning']} / 复习中 {cnt['reviewing']} / 已掌握 {cnt['mastered']}）")
+        broken = [w for w in words if not w.get("word") or not w.get("zh")]
+        if broken:
+            add("warn", "字段完整性", f"{len(broken)} 个词缺拼写或释义")
+    except Exception as exc:
+        add("bad", "读取账本", f"失败：{exc}")
+
+    heartbeat = LOG_DIR / "last-report.json"
+    reports = sorted(REPORT_DIR.glob("vocab-*.html")) if REPORT_DIR.exists() else []
+    if heartbeat.exists():
+        try:
+            info = json.loads(heartbeat.read_text(encoding="utf-8"))
+            when = datetime.strptime(info["at"], "%Y-%m-%d %H:%M")
+            age = (datetime.now() - when).days
+            add("ok" if age <= 8 else "warn", "最近出报告",
+                f"{info['at']}（{info.get('week')}，{info.get('words')} 词，{age} 天前）")
+        except Exception:
+            add("warn", "最近出报告", "心跳文件存在但无法解析")
+    elif reports:
+        add("warn", "最近出报告", f"{reports[-1].name}（本次部署前生成，无心跳记录）")
+    else:
+        add("warn", "最近出报告", "还没有生成过任何报告，跑一次 report 试试")
+
+    if args.task:
+        info = task_info(args.task)
+        if "error" in info:
+            add("bad", "计划任务", f"{args.task}：{info['error']}")
+        else:
+            code = info.get("Code", -1)
+            add("ok" if code == 0 else "warn", "计划任务",
+                f"{args.task}  {info.get('State')}  下次 {info.get('Next') or '—'}  "
+                f"上次 {info.get('Last') or '从未运行'}  exit={code}")
+            if code == 267011:
+                add("warn", "计划任务", "这个任务还一次都没跑过，可手动触发验证")
+
+    icon = {"ok": "✓", "warn": "⚠", "bad": "✗"}
+    width = max(dw(r[1]) for r in rows) + 3
+    print(f"生词账本自检 · {BASE}")
+    print("─" * 64)
+    for level, label, value in rows:
+        for i, line in enumerate(value.split("\n")):
+            head = f"{icon[level]} {pad(label, width)}" if i == 0 else " " * (width + 2)
+            print(f"{head}{line}")
+    print("─" * 64)
+    if problems:
+        print(f"{problems} 个问题需要处理，{warnings} 个提醒。")
+        return 1
+    if warnings:
+        print(f"可用，但有 {warnings} 个提醒。")
+        return 0
+    print("一切正常。")
+    return 0
 
 
 # ---------------------------------------------------------------- 入口
@@ -795,6 +916,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--max-review", type=int, default=60, help="背诵清单最多列多少词")
     r.add_argument("--title", help="自定义标题")
     r.set_defaults(func=cmd_report)
+
+    d = sub.add_parser("doctor", help="自检：账本、报告、计划任务是否正常")
+    d.add_argument("--task", help="顺带检查一个 Windows 计划任务，如 EnglishVocabWeekly")
+    d.set_defaults(func=cmd_doctor)
 
     return p
 
