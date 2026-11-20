@@ -1,5 +1,7 @@
 # vocab-ledger · 让 AI 把「你不会什么」记下来
 
+![tests](https://github.com/hexiegzm/vocab-ledger/actions/workflows/tests.yml/badge.svg)
+
 > 每次英语作业批改完，AI 把生词和错因写进一个本地 JSON 文件；
 > 每周日，它变成一张能打印的 A4。
 >
