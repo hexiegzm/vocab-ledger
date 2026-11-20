@@ -28,7 +28,7 @@
 只需要 Python 3.9+，没有第三方依赖。
 
 ```bash
-git clone https://github.com/<you>/vocab-ledger.git
+git clone https://github.com/hexiegzm/vocab-ledger.git
 cd vocab-ledger
 
 # 导入示例数据
