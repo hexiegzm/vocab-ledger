@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>第 46 周 生词报告</title>
+<style>
+:root{
+  --ink:#1c1b19; --muted:#736d64; --line:#e4dfd4; --paper:#fffdf8;
+  --accent:#14604f; --accent-soft:#e9f2ed;
+  --warn:#a8401d; --warn-soft:#fbeee7;
+  --amber:#8a5a00; --amber-soft:#fdf4de;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  margin:0; padding:28px 18px 60px; background:#f2efe7; color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+  line-height:1.65; font-size:15px;
+}
+.page{
+  max-width:880px; margin:0 auto; background:var(--paper);
+  border:1px solid var(--line); border-radius:10px;
+  padding:40px 44px 48px; box-shadow:0 2px 10px rgba(60,50,30,.06);
+}
+header{border-bottom:3px double var(--line); padding-bottom:18px; margin-bottom:26px}
+.kicker{font-size:12px; letter-spacing:.18em; color:var(--accent); font-weight:700; text-transform:uppercase}
+h1{font-size:30px; margin:6px 0 4px; letter-spacing:.01em; font-weight:700}
+.meta{font-size:12.5px; color:var(--muted)}
+.stats{display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin:0 0 30px}
+.stat{background:var(--accent-soft); border:1px solid #d8e6de; border-radius:8px; padding:12px 10px; text-align:center}
+.stat .n{font-size:24px; font-weight:700; color:var(--accent); line-height:1.2}
+.stat .l{font-size:11.5px; color:var(--muted); letter-spacing:.04em}
+h2{font-size:17px; margin:34px 0 12px; padding-left:10px; border-left:4px solid var(--accent); line-height:1.35}
+h2 .count{font-size:12px; color:var(--muted); font-weight:400; margin-left:6px}
+.hint{font-size:12.5px; color:var(--muted); margin:-4px 0 14px}
+table{width:100%; border-collapse:collapse; font-size:13.5px}
+th,td{text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top}
+th{font-size:11.5px; letter-spacing:.08em; color:var(--muted); font-weight:600; background:#faf7f0}
+td.w{font-family:Georgia,"Cambria",serif; font-size:16px; font-weight:600}
+.err-bad{color:var(--warn)}
+.group{margin-bottom:22px}
+.group-head{display:flex; align-items:baseline; gap:10px; margin:18px 0 10px; padding-bottom:6px; border-bottom:1px dashed var(--line)}
+.group-head .t{font-size:14.5px; font-weight:700; color:var(--accent)}
+.group-head .c{font-size:11.5px; color:var(--muted)}
+.cards{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+.card{border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:#fffefa; break-inside:avoid}
+.card-head{display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:4px}
+.card-head .w{font-family:Georgia,"Cambria",serif; font-size:19px; font-weight:700; letter-spacing:.01em}
+.card-head .ph{font-size:12px; color:var(--muted); font-family:"Charis SIL","Gentium Plus","Lucida Sans Unicode","Segoe UI","Microsoft YaHei",sans-serif}
+.card-head .pos{font-size:11.5px; color:var(--muted); font-style:italic}
+.badge{margin-left:auto; font-size:10.5px; padding:1px 8px; border-radius:99px; white-space:nowrap}
+.badge.learning{background:var(--warn-soft); color:var(--warn)}
+.badge.reviewing{background:var(--amber-soft); color:var(--amber)}
+.badge.mastered{background:var(--accent-soft); color:var(--accent)}
+.card .zh{font-size:14.5px; font-weight:600; margin:2px 0 6px}
+.colloc{margin:0 0 6px; padding-left:16px; font-size:12.5px; color:#3f3a33}
+.colloc li{margin:1px 0}
+.eg{font-size:12.5px; color:var(--muted); font-style:italic; border-left:2px solid var(--line); padding-left:10px}
+.myerr{margin-top:7px; font-size:12px; color:var(--warn); background:var(--warn-soft); border-radius:5px; padding:3px 8px; display:inline-block}
+.chips{display:flex; flex-wrap:wrap; gap:8px}
+.chip{border:1px solid #cfe0d6; background:var(--accent-soft); color:#14503f; border-radius:99px; padding:3px 12px; font-size:12.5px}
+.chip .s{font-family:Georgia,serif; font-weight:600}
+.tips{margin:0; padding-left:18px; font-size:13px; color:#3f3a33}
+.tips li{margin:4px 0}
+.quiz td{height:44px; border-bottom:1px solid #cfc8ba}
+.quiz td.blank{border-bottom:1px solid #b9b1a1}
+footer{margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font-size:11.5px; color:var(--muted)}
+.toolbar{position:fixed; right:22px; bottom:22px}
+.toolbar button{
+  font:inherit; font-size:13px; padding:10px 18px; border-radius:99px; cursor:pointer;
+  border:1px solid var(--accent); background:var(--accent); color:#fff; box-shadow:0 3px 10px rgba(0,0,0,.15)
+}
+.empty{color:var(--muted); font-size:13px; padding:10px 0}
+@media print{
+  body{background:#fff; padding:0; font-size:11.5pt}
+  .page{max-width:none; border:0; box-shadow:none; padding:0; border-radius:0}
+  .no-print{display:none !important}
+  .page-break{break-before:page}
+  h2{break-after:avoid}
+  .card{break-inside:avoid}
+  @page{size:A4; margin:15mm 14mm}
+}
+@media (max-width:640px){
+  .cards{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .page{padding:24px 18px}
+}
+</style></head><body>
+<div class="toolbar no-print"><button onclick="window.print()">打印 / 存为 PDF</button></div>
+<div class="page">
+<header>
+<div class="kicker">English Vocabulary · Weekly</div>
+<h1>第 46 周 · 生词报告</h1>
+<div class="meta">2026-11-09 — 2026-11-15 · 2026-W46 · 生成于 2026-11-20 20:28</div>
+</header>
+<div class="stats">
+<div class="stat"><div class="n">5</div><div class="l">本周新增</div></div>
+<div class="stat"><div class="n">5</div><div class="l">待巩固</div></div>
+<div class="stat"><div class="n">0</div><div class="l">本周掌握</div></div>
+<div class="stat"><div class="n">5</div><div class="l">生词总量</div></div>
+<div class="stat"><div class="n">33%</div><div class="l">本周正确率</div></div>
+</div>
+<h2>一、本周错题档案 <span class="count">2 条</span></h2>
+<table><thead><tr><th style="width:20%">单词</th><th style="width:24%">正确释义</th><th style="width:38%">我写错的 / 漏掉的</th><th style="width:18%">日期</th></tr></thead><tbody>
+<tr><td class="w">resilient</td><td>有韧性的；能恢复的</td><td class="err-bad">写成 resistent</td><td>2026-11-10</td></tr>
+<tr><td class="w">mitigate</td><td>缓解；减轻</td><td class="err-bad">「减轻」整句没译出来</td><td>2026-11-10</td></tr>
+</tbody></table>
+<h2>二、下周背诵清单 <span class="count">5 词</span></h2>
+<p class="hint">按主题归类。先通读一遍，再翻到最后做遮字自测；错题档案里出现过的词优先背。</p>
+<div class="group">
+<div class="group-head"><span class="t">写作搭配</span><span class="c">3 词</span></div>
+<div class="cards">
+<article class="card"><div class="card-head"><span class="w">resilient</span><span class="ph">/rɪˈzɪliənt/</span><span class="pos">adj.</span><span class="badge learning">待巩固</span></div><div class="zh">有韧性的；能恢复的</div><ul class="colloc"><li>a resilient economy 有韧性的经济</li><li>resilient to shocks 能抵御冲击</li></ul><div class="eg">Children are often more resilient than adults expect.</div><div class="myerr">我曾写错：写成 resistent</div></article>
+<article class="card"><div class="card-head"><span class="w">trade-off</span><span class="ph">/ˈtreɪd ɒf/</span><span class="pos">n.</span><span class="badge learning">待巩固</span></div><div class="zh">权衡；取舍</div><ul class="colloc"><li>a trade-off between A and B 在 A 与 B 之间取舍</li></ul><div class="eg">There is always a trade-off between speed and accuracy.</div></article>
+<article class="card"><div class="card-head"><span class="w">nuance</span><span class="ph">/ˈnjuːɑːns/</span><span class="pos">n.</span><span class="badge reviewing">复习中</span></div><div class="zh">细微差别；（表达上的）微妙之处</div><ul class="colloc"><li>capture the nuance 抓住细微差别</li><li>lose the nuance 丢掉语气上的微妙</li></ul><div class="eg">The translation is correct but loses some of the nuance.</div></article>
+</div></div>
+<div class="group">
+<div class="group-head"><span class="t">环境</span><span class="c">2 词</span></div>
+<div class="cards">
+<article class="card"><div class="card-head"><span class="w">mitigate</span><span class="ph">/ˈmɪtɪɡeɪt/</span><span class="pos">v.</span><span class="badge learning">待巩固</span></div><div class="zh">缓解；减轻</div><ul class="colloc"><li>mitigate the impact of 减轻……的影响</li><li>mitigate risks 降低风险</li></ul><div class="eg">Planting trees can mitigate the effects of climate change.</div><div class="myerr">我曾写错：「减轻」整句没译出来</div></article>
+<article class="card"><div class="card-head"><span class="w">biodiversity</span><span class="ph">/ˌbaɪəʊdaɪˈvɜːsəti/</span><span class="pos">n.</span><span class="badge learning">待巩固</span></div><div class="zh">生物多样性</div><ul class="colloc"><li>protect biodiversity 保护生物多样性</li><li>a loss of biodiversity 生物多样性丧失</li></ul><div class="eg">Wetlands support a remarkable level of biodiversity.</div></article>
+</div></div>
+<h2>三、本周已掌握 <span class="count">0 词</span></h2>
+<div class="empty">还没有词达到「已掌握」（连续答对 ≥ 2 次、分数 ≥ 4）。</div>
+<h2 class="page-break">四、遮字自测 <span class="count">盖上右列，逐词默写</span></h2>
+<p class="hint">看音标和单词，先在心里（或纸上）说中文和搭配，全部写完再翻回上一页对卡片；对完用 <code>vocab.py mark</code> 记录对错。</p>
+<table class="quiz"><thead><tr><th style="width:26%">单词</th><th style="width:20%">音标</th><th style="width:54%">释义 / 搭配（自己写）</th></tr></thead><tbody>
+<tr><td class="w">resilient</td><td class="ph">/rɪˈzɪliənt/</td><td class="blank"></td></tr>
+<tr><td class="w">mitigate</td><td class="ph">/ˈmɪtɪɡeɪt/</td><td class="blank"></td></tr>
+<tr><td class="w">trade-off</td><td class="ph">/ˈtreɪd ɒf/</td><td class="blank"></td></tr>
+<tr><td class="w">biodiversity</td><td class="ph">/ˌbaɪəʊdaɪˈvɜːsəti/</td><td class="blank"></td></tr>
+<tr><td class="w">nuance</td><td class="ph">/ˈnjuːɑːns/</td><td class="blank"></td></tr>
+</tbody></table>
+<h2>五、本周建议</h2><ul class="tips">
+<li>本周新增 5 个词：先看卡片建立印象，再遮字自测，最后用 mark 记录结果。</li>
+<li>本周有 2 次写错/漏译记录——错题档案里的词优先，它们是真正没掌握的。</li>
+<li>最早未掌握的词是 resilient（2026-11-10 加入），别让它跨周太多次。</li>
+</ul>
+<footer>由 <code>vocab.py</code> 生成 · 数据源 data/words.json · 共 5 词 · 下期自动生成于每周日 20:00</footer>
+</div></body></html>

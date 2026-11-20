@@ -1,0 +1,16 @@
+# 依赖与产物
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 个人数据：账本、报告、日志都不进版本库
+data/
+reports/
+logs/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

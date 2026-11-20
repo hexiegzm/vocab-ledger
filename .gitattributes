@@ -1,0 +1,5 @@
+# 统一用 LF，避免 Windows 上 clone 出来的脚本与 CI 校验不一致
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary

@@ -1,0 +1,181 @@
+# vocab-ledger · 让 AI 把「你不会什么」记下来
+
+> 每次英语作业批改完，AI 把生词和错因写进一个本地 JSON 文件；
+> 每周日，它变成一张能打印的 A4。
+>
+> 不需要 Anki，不需要账号，不联网。
+
+![周报预览](docs/preview.png)
+
+---
+
+## 为什么做这个
+
+用 Anki 的人多半死在「录入」上，不是死在复习算法上。看见生词 → 建卡 → 填释义 → 加标签 → 选牌组，三次之后就懒得动了。
+
+而 AI 批改作业的那一刻，**词、错因、上下文全都在场**，录入的边际成本几乎为零。
+
+所以这里的取舍很明确：**把录入成本压到零，哪怕复习端做得糙一点。**
+
+三条判断贯穿整个设计：
+
+1. **录入发生在批改当场**，而且是 AI 做，不是人做。人只负责背。
+2. **复习按周批量发生**，一张纸、一个晚上，不是每天弹通知。
+3. **AI 判断，脚本算术**。AI 决定「这个词他没掌握」和「错在哪」，脚本负责计分、排序、渲染。这条边界让整个东西可以离线跑——AI 不在，数据还在。
+
+## 30 秒上手
+
+只需要 Python 3.9+，没有第三方依赖。
+
+```bash
+git clone https://github.com/<you>/vocab-ledger.git
+cd vocab-ledger
+
+# 导入示例数据
+python vocab.py add --file examples/words.sample.json
+
+# 生成本周报告并打开
+python vocab.py report --open
+```
+
+打开 `reports/vocab-2026-W47.html`，就是上面那张纸。
+
+清空示例数据后，你就得到一本空账本：
+
+```bash
+rm -rf data reports logs
+```
+
+## 它怎么工作
+
+```
+你交作业
+   │
+   ▼
+AI 批改 ──► add   ：新词 + 音标 + 释义 + 搭配 + 错因   （录 入）
+        └─► mark  ：每个被测词 correct / wrong + 错因   （判 分）
+   │
+   ▼
+data/words.json        唯一数据源：纯文本、可手改、可 diff、自动备份
+   │
+   ▼  每周日（系统调度，不是 AI）
+vocab.py report ──► 单文件 HTML ──► 打印，贴桌上
+   │                                     │
+   └────────── 背完，结果再 mark ◄────────┘
+```
+
+整个环里唯一的「智能」在第一环。后面全是死规则，所以它可以一直跑、可复现、换模型也不变形。
+
+## 命令
+
+```bash
+python vocab.py add --file seed/week47.json      # 批量录入（幂等，重复导入不会重复计）
+python vocab.py add resilient --zh 有韧性的 --tag 写作搭配 --wrong --note "写成 resistent"
+python vocab.py mark resilient correct --note "听写全对"
+python vocab.py list --status learning           # 还不会的
+python vocab.py list --week 2026-W47             # 某周新增的
+python vocab.py stats                            # 总账
+python vocab.py weeks                            # 按周统计
+python vocab.py report --open                    # 出周报
+python vocab.py report --week 2026-W46 --open     # 补出旧周报
+```
+
+## 让 AI 帮你记
+
+这是这个仓库的重点。**它一半是工具，一半是协议。**
+
+| 文件 | 作用 |
+|---|---|
+| [`AGENTS.md`](AGENTS.md) | 仓库内的工作约定。`AGENTS.md` 是跨工具的事实标准，Claude Code、Codex、Cursor、DSH 都读——AI 进这个目录就自动知道该干什么 |
+| [`skills/vocab-ledger/SKILL.md`](skills/vocab-ledger/SKILL.md) | 同一套流程的 skill 版，让 AI 在**任何对话**里都能想起「该记账了」，不必先进这个目录 |
+| [`SPEC.md`](SPEC.md) | 协议本体：字段、判定公式、渲染契约。换语言实现对照这份 |
+
+典型的一轮对话：
+
+> **你**：`（贴一篇英语作文）` 帮我改改。
+>
+> **AI**：`（批改，指出 6 处问题）` 记了 5 个新词、2 条错因。最该先背：resilient（写成 resistent）、mitigate（「减轻」整句没译出来）。周报里会出现在「写作搭配」和「环境」两组。
+
+注意最后那句话——**账户里多了东西**，而不是聊完就散。
+
+## 掌握度怎么算
+
+| 事件 | 分数 |
+|---|---|
+| 答对 | `min(5, score+1)`，连对 +1 |
+| 答错 | `max(0, score−2)`，连对归零 |
+
+- 待巩固 `learning`：score = 0
+- 复习中 `reviewing`：score ≥ 1
+- 已掌握 `mastered`：score ≥ 4 **且** 连对 ≥ 2
+
+门槛偏高是有意的：宁可多背一遍，也别虚标已掌握。完整判定表见 [SPEC §5](SPEC.md#5-判定规则)。
+
+## 每周自动出报告
+
+调度**不在脚本里**，交给系统：cron / Windows 计划任务 / launchd，任选其一，一行命令：
+
+```bash
+# Linux / macOS，每周日 20:00
+0 20 * * 0 cd /path/to/vocab-ledger && python vocab.py report --open
+```
+
+Windows、macOS 的写法，以及「为什么不内置调度器」，见 [docs/scheduling.md](docs/scheduling.md)。
+
+## 报告里有什么
+
+1. **本周错题档案** —— 你写错了什么、错在哪天。这是最该先背的一批。
+2. **下周背诵清单** —— 按主题分组的卡片：拼写、音标、词性、释义、搭配、例句，**外加你自己写错过的记录**。
+3. **本周已掌握** —— 达到标准的词。
+4. **遮字自测** —— 只给单词和音标，右边留白让你默写，另起一页方便打印。
+5. **本周建议** —— 根据正确率与积压量给的三两句话。
+
+A4 排版，卡片不跨页截断，右下角有「打印 / 存为 PDF」。
+
+## 隐私
+
+- **不联网**。除了 `git clone`，它这辈子不会发出一个请求。
+- **无账号、无遥测、无云同步**。
+- 数据是一个你能用记事本打开的 JSON，摆在你自己的硬盘上。
+
+生词库其实挺私人的——它暴露你的水平、职业方向和阅读兴趣。所以「不上传」不是缺功能，是设计目标。
+
+## 不做什么（Non-goals）
+
+明确拒绝，因为这些都会破坏「零维护」：
+
+- ❌ 内置间隔重复调度器（分数 + 排序已经近似 Leitner，够用）
+- ❌ 手机 App、网页后端、账号体系
+- ❌ 云同步
+- ❌ 音标/释义的自动抓取（AI 在场时由 AI 填，AI 不在时留空）
+
+## 目录
+
+```
+vocab-ledger/
+├─ vocab.py                     参考实现（零依赖，单文件）
+├─ SPEC.md                      协议：格式、判定、渲染契约
+├─ AGENTS.md                    给 AI 的仓库内约定
+├─ skills/vocab-ledger/SKILL.md 同一流程的 skill 版
+├─ examples/words.sample.json   可直接导入的样例
+├─ docs/                        调度说明、预览图
+└─ tests/                       31 个标准库单元测试
+```
+
+## 开发
+
+```bash
+python -m unittest discover -s tests -v     # 零依赖，不用装 pytest
+```
+
+## 协议优先
+
+这个项目的第一交付物是 [SPEC.md](SPEC.md)，不是 `vocab.py`。
+
+任何语言、任何工具，只要满足规格，就能读写同一本账本、渲染出同一种报告。欢迎其他实现——用 Node 写个渲染器、用 Go 写个 CLI、给 Obsidian 写个插件来读 `words.json`，都算这个项目的一部分。
+
+参考实现只是其中之一。
+
+## License
+
+MIT

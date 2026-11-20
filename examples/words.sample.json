@@ -1,0 +1,70 @@
+{
+  "_comment": "示例数据：虚构的 5 个词，用来演示报告长什么样。真实使用时生词由 AI 在批改时写入。",
+  "words": [
+    {
+      "word": "resilient",
+      "phonetic": "/rɪˈzɪliənt/",
+      "pos": "adj.",
+      "zh": "有韧性的；能恢复的",
+      "collocations": ["a resilient economy 有韧性的经济", "resilient to shocks 能抵御冲击"],
+      "example": "Children are often more resilient than adults expect.",
+      "tags": ["写作搭配"],
+      "source": "示例：作文批改",
+      "first_seen": "2026-11-10",
+      "status": "wrong",
+      "note": "写成 resistent"
+    },
+    {
+      "word": "mitigate",
+      "phonetic": "/ˈmɪtɪɡeɪt/",
+      "pos": "v.",
+      "zh": "缓解；减轻",
+      "collocations": ["mitigate the impact of 减轻……的影响", "mitigate risks 降低风险"],
+      "example": "Planting trees can mitigate the effects of climate change.",
+      "tags": ["环境"],
+      "source": "示例：作文批改",
+      "first_seen": "2026-11-10",
+      "status": "wrong",
+      "note": "「减轻」整句没译出来"
+    },
+    {
+      "word": "trade-off",
+      "phonetic": "/ˈtreɪd ɒf/",
+      "pos": "n.",
+      "zh": "权衡；取舍",
+      "collocations": ["a trade-off between A and B 在 A 与 B 之间取舍"],
+      "example": "There is always a trade-off between speed and accuracy.",
+      "tags": ["写作搭配"],
+      "source": "示例：写作积累",
+      "first_seen": "2026-11-11",
+      "status": "new",
+      "note": ""
+    },
+    {
+      "word": "nuance",
+      "phonetic": "/ˈnjuːɑːns/",
+      "pos": "n.",
+      "zh": "细微差别；（表达上的）微妙之处",
+      "collocations": ["capture the nuance 抓住细微差别", "lose the nuance 丢掉语气上的微妙"],
+      "example": "The translation is correct but loses some of the nuance.",
+      "tags": ["写作搭配"],
+      "source": "示例：翻译批改",
+      "first_seen": "2026-11-12",
+      "status": "correct",
+      "note": ""
+    },
+    {
+      "word": "biodiversity",
+      "phonetic": "/ˌbaɪəʊdaɪˈvɜːsəti/",
+      "pos": "n.",
+      "zh": "生物多样性",
+      "collocations": ["protect biodiversity 保护生物多样性", "a loss of biodiversity 生物多样性丧失"],
+      "example": "Wetlands support a remarkable level of biodiversity.",
+      "tags": ["环境"],
+      "source": "示例：阅读摘录",
+      "first_seen": "2026-11-12",
+      "status": "new",
+      "note": ""
+    }
+  ]
+}
