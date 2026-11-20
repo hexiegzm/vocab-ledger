@@ -32,7 +32,7 @@ description: 当用户提交英语作文、翻译、听写或阅读笔记并请�
 - 用户本来用对了的常见词
 - 你为了显得有料而补充的生僻词
 
-宁少勿多：一周 15–25 个能背完，60 个背不完。
+宁少勿多：一周 10–15 个能背完，30 个背不完。
 
 ### 第二步：落库
 
@@ -40,25 +40,33 @@ description: 当用户提交英语作文、翻译、听写或阅读笔记并请�
 
 ```bash
 python vocab.py add --file seed/<week>.json     # 批量，推荐
-python vocab.py mark --file seed/<week>-res.json
 ```
 
 单个词用行内参数：
 
 ```bash
 python vocab.py add "resilient" --zh "有韧性的" --pos adj. \
-  --tag "写作搭配" --source "2026-W47 作文批改" --wrong --note "写成 resistent"
+  --tag "写作搭配" --source "2026-W47 作文批改" --note "写成 resistent"
 ```
+
+### 第三步：用户说「会了」时划掉
+
+```bash
+python vocab.py learn resilient        # 背完了，不再出现在周报清单
+python vocab.py unlearn resilient      # 又忘了，放回去（note 保留）
+```
+
+**这是他唯一的进度信号，你不要替他按。**
 
 要点：`note` 必须具体到「写成了什么、错在哪个介词/时态」；重复导入是安全的（幂等），不要因为担心重复而跳过第二次批改。
 
-### 第三步：回话
+### 第四步：回话
 
 三行以内：记了几个词、几条错因、最该先背哪几个。不要贴 JSON，不要复述报告全文。
 
 ## 不要做
 
-- 不要手改 `score` / `status`（由事件推导，见 SPEC §5）
+- 不要手改 `learned`；也不要替用户判定他会了
 - 不要覆盖用户已有的释义与例句
 - 不要编造音标；没把握就留空
 - 不要自己搞一套新字段——要增字段先改 SPEC 版本

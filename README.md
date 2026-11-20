@@ -54,8 +54,7 @@ rm -rf data reports logs
 你交作业
    │
    ▼
-AI 批改 ──► add   ：新词 + 音标 + 释义 + 搭配 + 错因   （录 入）
-        └─► mark  ：每个被测词 correct / wrong + 错因   （判 分）
+AI 批改 ──► add   ：不认识的词 + 音标 + 释义 + 搭配 + 为什么记它
    │
    ▼
 data/words.json        唯一数据源：纯文本、可手改、可 diff、自动备份
@@ -63,18 +62,20 @@ data/words.json        唯一数据源：纯文本、可手改、可 diff、自�
    ▼  每周日（系统调度，不是 AI）
 vocab.py report ──► 单文件 HTML ──► 打印，贴桌上
    │                                     │
-   └────────── 背完，结果再 mark ◄────────┘
+   └────────── 背完了，说一句「XX 会了」──┘
 ```
 
-整个环里唯一的「智能」在第一环。后面全是死规则，所以它可以一直跑、可复现、换模型也不变形。
+整个环里唯一的「智能」在第一环——判断哪些词值得记。后面全是死规则，所以它可以一直跑、可复现、换模型也不变形。
 
 ## 命令
 
 ```bash
 python vocab.py add --file seed/week47.json      # 批量录入（幂等，重复导入不会重复计）
-python vocab.py add resilient --zh 有韧性的 --tag 写作搭配 --wrong --note "写成 resistent"
-python vocab.py mark resilient correct --note "听写全对"
-python vocab.py list --status learning           # 还不会的
+python vocab.py add resilient --zh 有韧性的 --tag 写作搭配 --note "写成 resistent"
+python vocab.py learn resilient                  # 背完了，从清单里划掉
+python vocab.py unlearn resilient                # 又忘了，放回去
+python vocab.py list                             # 还没背的
+python vocab.py list --learned                   # 背过的
 python vocab.py list --week 2026-W47             # 某周新增的
 python vocab.py stats                            # 总账
 python vocab.py weeks                            # 按周统计
@@ -119,18 +120,22 @@ python vocab.py doctor --task VocabLedgerWeekly   # 自检：账本 / 报告 / �
 
 注意最后那句话——**账户里多了东西**，而不是聊完就散。
 
-## 掌握度怎么算
+## 词库怎么用
 
-| 事件 | 分数 |
-|---|---|
-| 答对 | `min(5, score+1)`，连对 +1 |
-| 答错 | `max(0, score−2)`，连对归零 |
+一个词只有两种状态，没有分数：
 
-- 待巩固 `learning`：score = 0
-- 复习中 `reviewing`：score ≥ 1
-- 已掌握 `mastered`：score ≥ 4 **且** 连对 ≥ 2
+```
+   add                learn
+ ∅ ───► 还没背 ─────► 背过了
+          ▲              │
+          └──────────────┘
+             unlearn
+```
 
-门槛偏高是有意的：宁可多背一遍，也别虚标已掌握。完整判定表见 [SPEC §5](SPEC.md#5-判定规则)。
+- `learn`：背完了，下次报告里不再出现
+- `unlearn`：又想不起来了，放回清单，**`note` 不会被清掉**
+
+v2 删掉了 v1 那套「答对 +1、答错 −2、四连对算掌握」的掌握度模型。删掉的原因写在 [SPEC §2](SPEC.md#2-为什么没有掌握度) 里，一句话：**那套模型需要「答题」这个动作来喂数据，而实际使用里根本没有答题环节**——没有测验就没有正确答案，分数会永远停在 0，清单永远不缩小。
 
 ## 每周自动出报告
 
@@ -158,7 +163,7 @@ $ python vocab.py doctor --task VocabLedgerWeekly
 ────────────────────────────────────────────────────────
 ✓ Python       3.12.4
 ✓ 数据文件     data/words.json  (13.0 KB)
-✓ 词库         42 个词（待巩固 17 / 复习中 9 / 已掌握 16）
+✓ 词库         42 个词（还没背 17 / 背过 25）
 ✓ 最近出报告   2026-11-22 20:00（2026-W47，20 词，2 天前）
 ✓ 计划任务     VocabLedgerWeekly  Ready  下次 2026-11-29 20:00  上次 2026-11-22 20:00  exit=0
 ────────────────────────────────────────────────────────
@@ -169,11 +174,11 @@ $ python vocab.py doctor --task VocabLedgerWeekly
 
 ## 报告里有什么
 
-1. **本周错题档案** —— 你写错了什么、错在哪天。这是最该先背的一批。
-2. **下周背诵清单** —— 按主题分组的卡片：拼写、音标、词性、释义、搭配、例句，**外加你自己写错过的记录**。
-3. **本周已掌握** —— 达到标准的词。
+1. **本周新记** —— 这周记了哪些词，当初为什么记它。
+2. **还没背的** —— 按主题分组的卡片：拼写、音标、词性、释义、搭配、例句，**外加你自己写错过的记录**。
+3. **本周背完** —— 这周被你划掉的词。这一节是报告里唯一的正反馈。
 4. **遮字自测** —— 只给单词和音标，右边留白让你默写，另起一页方便打印。
-5. **本周建议** —— 根据正确率与积压量给的三两句话。
+5. **本周建议** —— 积压太多、或者一周没划掉任何词时，说两句。
 
 A4 排版，卡片不跨页截断，右下角有「打印 / 存为 PDF」。
 
@@ -206,7 +211,7 @@ vocab-ledger/
 ├─ prompts/universal.md         给不能读写文件的 AI 用的提示词
 ├─ examples/words.sample.json   可直接导入的样例
 ├─ docs/                        调度说明、预览图
-└─ tests/                       44 个标准库单元测试
+└─ tests/                       42 个标准库单元测试
 ```
 
 ## 开发

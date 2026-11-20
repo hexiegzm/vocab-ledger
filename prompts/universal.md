@@ -50,54 +50,45 @@ D:\Python\python.exe vocab.py add --file words.json
     "collocations": ["taikonaut 中国航天员"],
     "example": "Yang Liwei became the first Chinese astronaut to travel into space.",
     "tags": ["航天科技"],
-    "status": "wrong",
     "note": "写成 australian（澳大利亚人）"
   }
 ]
-
-status 取值：我写错了填 "wrong"，我用对了但值得记的填 "new"。
 
 下面是待批改的内容：
 （在这里粘贴你的作文或翻译）
 ```
 
-## 第二段：记录我背得怎么样
+## 第二段：背完了，把词划掉
 
-```text
-我在复习生词。下面每个词后面是我这次的表现，请严格按格式输出，不要解释：
+账本只有两种状态：**还没背**、**背过了**。背完一批就标一下，它们下次不再出现在报告里。
 
-[
-  {"word": "astronaut", "result": "correct", "note": ""},
-  {"word": "mitigate", "result": "wrong", "note": "又写成 mitigrate"}
-]
-
-规则：
-- result 只能是 "correct" 或 "wrong"
-- 写错时 note 必须写清怎么错的，写对时 note 可以空
-- 只输出 JSON 数组，不要代码块标记
-
-我的表现：
-（按「单词 - 对/错 - 怎么错的」写，一行一个）
-```
-
-然后入库：
+不用问 AI，自己一条命令即可：
 
 ```bat
-D:\Python\python.exe vocab.py mark --file results.json
+D:\Python\python.exe vocab.py learn astronaut mitigate nuance
+D:\Python\python.exe vocab.py unlearn astronaut      :: 又忘了，放回去
 ```
+
+想批量也可以让 AI 把它刚输出的词整理成数组，用 `--file`：
+
+```bat
+D:\Python\python.exe vocab.py learn --file words.json
+```
+
+`words.json` 只要一个字符串数组，或者 `{"words": ["astronaut", "mitigate"]}`。
 
 ---
 
 ## 常见问题
 
 **AI 返回的 JSON 外面裹了 ```json 代码块怎么办？**
-新版 `vocab.py` 会自动剥掉代码块标记，直接存下来导入即可。
+`vocab.py` 会自动剥掉代码块标记，直接存下来导入即可。
 
 **它多说了几句话怎么办？**
 删掉 JSON 前后的文字，只留方括号开始到方括号结束的部分。
 
 **一次批改生成了多个文件怎么办？**
-可以重复 `add`，同名同错因的事件不会重复计分（幂等）。
+可以重复 `add`，同一个词不会重复出现，也不会覆盖已有的释义（幂等）。
 
 **我想让它按我的主题分类？**
 把 `tags` 的候选值告诉它，例如「只用这三个标签：航天科技、写作搭配、环境」。

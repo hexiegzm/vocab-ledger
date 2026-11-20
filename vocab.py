@@ -1,51 +1,37 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-vocab-ledger · 本地生词账本
-===========================
+vocab-ledger · 本地生词账本（v2：只记不会的词，不算分）
+=========================================================
 
-纯标准库、零依赖、零联网：记录生词 → 记录答题结果 → 算掌握度 → 生成可打印的 HTML 周报。
+纯标准库、零依赖、零联网：把「我不会的词」记成一条记录，每周渲染成一张能打印的纸。
 
-设计要点（详见 SPEC.md）：
-  * 只存「对错事件」，掌握状态由事件推导，随时可改规则重算；
-  * 数据是单个可读的 JSON 文件，能手改、能比 diff、能进 git；
-  * 渲染是纯函数，同样数据永远渲染出同样的报告；
-  * 调度不在脚本里，用系统的 cron / 计划任务去调 `report`。
+v2 的设计（详见 SPEC.md）：
+  * 不做掌握度、不算分、不排复习档期；
+  * 一个词只有两种状态：还没背 / 背过了；
+  * 背完用 `learn` 标一下，下次报告里就不再出现；
+  * 唯一不可再生的资产是 `note`——当初为什么记它（写成了什么、哪里错）。
 
 目录::
 
     vocab-ledger/
       vocab.py              本脚本（唯一必需文件）
-      data/words.json       生词库（唯一数据源，可直接手改）
+      data/words.json       词库（唯一数据源，可直接手改）
       data/backup/          每次写入前的自动备份
       reports/              生成好的 HTML 周报
       logs/                 运行日志
 
 常用命令::
 
-    # 批量导入（推荐，Agent 用这个）
     python vocab.py add --file examples/words.sample.json
-
-    # 单个添加
-    python vocab.py add astronaut --zh 航天员 --pos n. --phonetic "/ˈæstrənɔːt/" \
-        --colloc "taikonaut 中国航天员" --tag 航天 --source "2026-W47 翻译练习" \
-        --example "Yang Liwei became the first Chinese astronaut." \
-        --wrong --note "写成 australian"
-
-    # 记录一次答题结果
-    python vocab.py mark astronaut correct --note "听写全对"
-    python vocab.py mark astronaut wrong   --note "又写成 australian"
-    python vocab.py mark --file seed/results.json
-
-    # 查看
-    python vocab.py list --status learning
-    python vocab.py list --week 2026-W47
-    python vocab.py stats
-    python vocab.py weeks
-
-    # 生成周报
-    python vocab.py report                      # 本周
-    python vocab.py report --week 2026-W47 --open
+    python vocab.py add astronaut --zh 航天员 --pos n. --tag 航天科技 \
+        --source "2026-W47 翻译练习" --note "写成 australian"
+    python vocab.py learn astronaut mitigate        # 背完了
+    python vocab.py unlearn astronaut               # 又忘了，放回去
+    python vocab.py list                            # 还没背的
+    python vocab.py report --open                   # 出周报
+    python vocab.py weekly                          # 补漏 + 出当周（调度用）
+    python vocab.py doctor --task VocabLedgerWeekly # 自检
 """
 
 from __future__ import annotations
@@ -71,13 +57,9 @@ BACKUP_DIR = BASE / "data" / "backup"
 REPORT_DIR = BASE / "reports"
 LOG_DIR = BASE / "logs"
 
+SCHEMA_VERSION = 2
 MAX_BACKUPS = 40
-MASTER_MIN_SCORE = 4        # 掌握：score >= 4
-MASTER_MIN_STREAK = 2       # 且连续答对 >= 2 次
-
-STATUS_ORDER = {"learning": 0, "reviewing": 1, "mastered": 2}
-STATUS_ZH = {"learning": "待巩固", "reviewing": "复习中", "mastered": "已掌握"}
-BAD_EVENTS = ("wrong", "misspelled")
+STATE_ZH = {"open": "还没背", "learned": "背过了"}
 
 
 # ---------------------------------------------------------------- 小工具
@@ -102,7 +84,6 @@ def log(msg: str) -> None:
 
 
 def dw(s: str) -> int:
-    """显示宽度（中文算 2）。"""
     return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in s)
 
 
@@ -111,7 +92,6 @@ def pad(s: str, width: int) -> str:
 
 
 def cut(s: str, width: int) -> str:
-    """按显示宽度截断（超出补省略号）。"""
     out, acc = [], 0
     for ch in s:
         w = 2 if unicodedata.east_asian_width(ch) in "WF" else 1
@@ -141,7 +121,6 @@ def week_monday(d: date) -> date:
 
 
 def parse_week(s: str | None) -> date:
-    """接受 '2026-W47' 或 '2026-11-20'，返回该周周一。"""
     if not s:
         return week_monday(date.today())
     s = s.strip()
@@ -158,45 +137,63 @@ def in_range(iso: str | None, start: date, end: date) -> bool:
     return bool(iso) and start.isoformat() <= iso <= end.isoformat()
 
 
+def read_json(path: Path):
+    """读 JSON，容忍 BOM 和 ```json 代码块包裹（聊天机器人最爱加这个）。"""
+    text = path.read_text(encoding="utf-8-sig").strip()
+    if text.startswith("```"):
+        first_nl = text.find("\n")
+        text = text[first_nl + 1:] if first_nl != -1 else ""
+        text = text.rstrip()
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+    return json.loads(text)
+
+
 # ---------------------------------------------------------------- 数据读写
 
-def recompute(w: dict) -> dict:
-    score = int(w.get("score", 0))
-    streak = int(w.get("consecutive", 0))
-    if score >= MASTER_MIN_SCORE and streak >= MASTER_MIN_STREAK:
-        w["status"] = "mastered"
-    elif score >= 1:
-        w["status"] = "reviewing"
-    else:
-        w["status"] = "learning"
-    return w
+def migrate(data: dict) -> dict:
+    """把 v1（带 score / status 的掌握度模型）迁到 v2（只有 open / learned）。"""
+    if data.get("version", 1) >= SCHEMA_VERSION:
+        return data
+    for w in data.get("words", []):
+        was_mastered = w.get("status") == "mastered"
+        w["learned"] = bool(was_mastered)
+        w["learned_at"] = w.get("last_review") if was_mastered else None
+        if not w.get("note"):
+            notes = [h.get("note") for h in w.get("history", [])
+                     if h.get("event") in ("wrong", "misspelled") and h.get("note")]
+            if notes:
+                w["note"] = notes[-1]
+        for dead in ("score", "consecutive", "status", "last_review", "history"):
+            w.pop(dead, None)
+    data["version"] = SCHEMA_VERSION
+    return data
 
 
 def load() -> dict:
     if not DATA_FILE.exists():
-        return {"version": 1, "updated_at": None, "words": []}
+        return {"version": SCHEMA_VERSION, "updated_at": None, "words": []}
     with open(DATA_FILE, encoding="utf-8-sig") as f:
         data = json.load(f)
     data.setdefault("words", [])
     for w in data["words"]:
-        w.setdefault("history", [])
         w.setdefault("collocations", [])
         w.setdefault("tags", [])
-        w.setdefault("score", 0)
-        w.setdefault("consecutive", 0)
-        recompute(w)
-    return data
+        w.setdefault("learned", False)
+        w.setdefault("learned_at", None)
+    return migrate(data)
 
 
 def save(data: dict) -> None:
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data["version"] = SCHEMA_VERSION
     data["updated_at"] = now_iso()
     if DATA_FILE.exists():
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(DATA_FILE, BACKUP_DIR / f"words-{stamp}.json")
-        olds = sorted(BACKUP_DIR.glob("words-*.json"))
-        for p in olds[:-MAX_BACKUPS]:
+        for p in sorted(BACKUP_DIR.glob("words-*.json"))[:-MAX_BACKUPS]:
             p.unlink(missing_ok=True)
     tmp = DATA_FILE.with_name("words.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -211,34 +208,11 @@ def find_word(data: dict, word: str) -> dict | None:
     return None
 
 
-def apply_event(w: dict, result: str, note: str = "", when: date | None = None,
-                dedupe: bool = False) -> bool:
-    """记录一次答题事件。
-
-    dedupe=True 时，同一天、同结果、同备注的重复事件会被忽略——批量导入用，
-    保证重复导入同一份 seed 不会把错误重复记一次。
-    """
-    when = when or date.today()
-    event = {"date": when.isoformat(), "event": result, "note": note}
-    if dedupe and event in w.get("history", []):
-        return False
-    w.setdefault("history", []).append(event)
-    if result == "correct":
-        w["score"] = min(5, int(w.get("score", 0)) + 1)
-        w["consecutive"] = int(w.get("consecutive", 0)) + 1
-    else:
-        w["score"] = max(0, int(w.get("score", 0)) - 2)
-        w["consecutive"] = 0
-    w["last_review"] = when.isoformat()
-    recompute(w)
-    return True
-
-
 def upsert(data: dict, rec: dict) -> tuple[dict, bool]:
-    """新增或合并一条生词。返回 (记录, 是否新建)。"""
+    """新增或合并一条词。返回 (记录, 是否新建)。只补空缺，不覆盖已有内容。"""
     word = (rec.get("word") or "").strip()
     if not word:
-        raise SystemExit("生词记录缺少 word 字段")
+        raise SystemExit("词条缺少 word 字段")
     existing = find_word(data, word)
     created = existing is None
     if created:
@@ -252,21 +226,20 @@ def upsert(data: dict, rec: dict) -> tuple[dict, bool]:
             "tags": [],
             "source": "",
             "first_seen": rec.get("first_seen") or date.today().isoformat(),
-            "score": 0,
-            "consecutive": 0,
-            "status": "learning",
-            "last_review": None,
-            "history": [],
+            "note": "",
+            "learned": False,
+            "learned_at": None,
         }
         data["words"].append(existing)
 
     w = existing
-    # 只补空缺，不覆盖已有内容
     for field in ("phonetic", "pos", "zh", "example"):
         if not w.get(field) and rec.get(field):
             w[field] = rec[field]
+    if rec.get("note") and not w.get("note"):
+        w["note"] = rec["note"]
     if rec.get("source") and rec["source"] not in (w.get("source") or ""):
-        w["source"] = (w.get("source") + "；" + rec["source"]).strip("；") if w.get("source") else rec["source"]
+        w["source"] = (w["source"] + "；" + rec["source"]).strip("；") if w.get("source") else rec["source"]
     for lst in ("collocations", "tags"):
         incoming = rec.get(lst) or []
         if isinstance(incoming, str):
@@ -275,35 +248,10 @@ def upsert(data: dict, rec: dict) -> tuple[dict, bool]:
             item = str(item).strip()
             if item and item not in w[lst]:
                 w[lst].append(item)
-
-    status = (rec.get("status") or "new").lower()
-    # 导入历史数据时，事件应落在它真正发生的那天（first_seen），而不是今天
-    when = parse_date(rec.get("first_seen")) if rec.get("first_seen") else date.today()
-    if status in ("wrong", "misspelled", "error"):
-        apply_event(w, "wrong", rec.get("note", ""), when, dedupe=True)
-    elif status == "correct":
-        apply_event(w, "correct", rec.get("note", ""), when, dedupe=True)
-    recompute(w)
     return w, created
 
 
 # ---------------------------------------------------------------- 命令：add
-
-def read_json(path: Path):
-    """读 JSON 文件，容忍 BOM、首尾空白、以及被 ```json 代码块包裹的情况。
-
-    后者很常见：让聊天机器人输出 JSON 时，它总爱加个 Markdown 代码块。
-    """
-    text = path.read_text(encoding="utf-8-sig").strip()
-    if text.startswith("```"):
-        first_nl = text.find("\n")
-        text = text[first_nl + 1:] if first_nl != -1 else ""
-        text = text.rstrip()
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-    return json.loads(text)
-
 
 def cmd_add(args) -> int:
     data = load()
@@ -329,75 +277,90 @@ def cmd_add(args) -> int:
             "example": args.example,
             "tags": args.tag,
             "source": args.source,
-            "status": "wrong" if args.wrong else ("correct" if args.correct else "new"),
             "note": args.note,
             "first_seen": args.date,
         })
     if not records:
         raise SystemExit("没有要添加的内容：用 --file 或直接给单词。")
 
-    new_count = merge_count = 0
+    new = merged = 0
     for rec in records:
         _, created = upsert(data, rec)
-        new_count += created
-        merge_count += (not created)
+        new += created
+        merged += not created
 
     save(data)
-    log(f"add: new={new_count} merged={merge_count} src={args.file or args.word}")
-    print(f"✅ 新增 {new_count} 个，合并更新 {merge_count} 个；生词库共 {len(data['words'])} 个。")
+    log(f"add: new={new} merged={merged} src={args.file or args.word}")
+    print(f"✅ 新增 {new} 个，合并更新 {merged} 个；词库共 {len(data['words'])} 个。")
     return 0
 
 
-# ---------------------------------------------------------------- 命令：mark
+# ---------------------------------------------------------------- 命令：learn / unlearn
 
-def cmd_mark(args) -> int:
-    data = load()
-    jobs: list[dict] = []
+def _collect_words(args) -> list[str]:
+    words: list[str] = []
     if args.file:
         payload = read_json(Path(args.file))
         if isinstance(payload, dict):
-            payload = payload.get("results", [])
-        jobs.extend(payload)
-    if args.word:
-        if not args.result:
-            raise SystemExit("用法：mark <单词> correct|wrong [--note ...]")
-        jobs.append({"word": args.word, "result": args.result, "note": args.note})
-    if not jobs:
-        raise SystemExit("没有要记录的结果。")
+            payload = payload.get("words", [])
+        for item in payload:
+            words.append(item if isinstance(item, str) else item.get("word", ""))
+    words.extend(args.words or [])
+    return [w for w in (x.strip() for x in words) if w]
 
-    when = parse_date(args.date)
+
+def cmd_learn(args) -> int:
+    data = load()
+    targets = _collect_words(args)
+    if not targets:
+        raise SystemExit("没指定要标记的词。")
+    stamp = parse_date(args.date).isoformat()
     done, missing = [], []
-    for job in jobs:
-        w = find_word(data, job.get("word", ""))
-        result = str(job.get("result", "")).lower()
-        if result not in ("correct", "wrong", "misspelled", "error"):
-            raise SystemExit(f"result 只能是 correct / wrong，收到：{result}")
-        result = "correct" if result == "correct" else "wrong"
+    for word in targets:
+        w = find_word(data, word)
         if w is None:
-            missing.append(job.get("word", ""))
+            missing.append(word)
             continue
-        apply_event(w, result, job.get("note", ""), when)
-        done.append((w["word"], result, w["status"]))
-
+        if not w.get("learned"):
+            w["learned"] = True
+            w["learned_at"] = stamp
+            done.append(w["word"])
     if done:
         save(data)
-        log(f"mark: {done}")
-    for word, result, status in done:
-        icon = "✅" if result == "correct" else "❌"
-        print(f"{icon} {pad(word, 18)} → {STATUS_ZH[status]} (score={next(w['score'] for w in data['words'] if w['word'] == word)})")
+        log(f"learn: {done}")
+    print(f"✅ 标记 {len(done)} 个为「背过了」；还剩 {sum(1 for w in data['words'] if not w.get('learned'))} 个没背。")
     if missing:
-        print(f"⚠️  库里没有这些词，先 add：{', '.join(missing)}", file=sys.stderr)
+        print(f"⚠️  词库里没有：{', '.join(missing)}（先用 add 添加）", file=sys.stderr)
         return 2
     return 0
 
 
-# ---------------------------------------------------------------- 命令：list
+def cmd_unlearn(args) -> int:
+    data = load()
+    targets = _collect_words(args)
+    done = []
+    for word in targets:
+        w = find_word(data, word)
+        if w and w.get("learned"):
+            w["learned"] = False
+            w["learned_at"] = None
+            done.append(w["word"])
+    if done:
+        save(data)
+        log(f"unlearn: {done}")
+    print(f"↩️  放回 {len(done)} 个；现在还有 {sum(1 for w in data['words'] if not w.get('learned'))} 个没背。")
+    return 0
+
+
+# ---------------------------------------------------------------- 命令：list / stats / weeks
 
 def cmd_list(args) -> int:
     data = load()
     words = data["words"]
-    if args.status:
-        words = [w for w in words if w["status"] == args.status]
+    if args.learned:
+        words = [w for w in words if w.get("learned")]
+    elif not args.all:
+        words = [w for w in words if not w.get("learned")]
     if args.tag:
         words = [w for w in words if args.tag in (w.get("tags") or [])]
     if args.week:
@@ -408,63 +371,50 @@ def cmd_list(args) -> int:
     if args.json:
         print(json.dumps(words, ensure_ascii=False, indent=2))
         return 0
-
     if not words:
-        print("（没有符合条件的生词）")
+        print("（没有符合条件的词）")
         return 0
 
-    words = sorted(words, key=lambda w: (STATUS_ORDER[w["status"]], w["word"].lower()))
-    print(f"{pad('单词', 20)}{pad('状态', 8)}{pad('分数', 6)}{pad('释义', 24)}标签")
-    print("-" * 82)
+    words = sorted(words, key=lambda w: (w.get("first_seen") or "", w["word"].lower()))
+    print(f"{pad('单词', 22)}{pad('状态', 8)}{pad('释义', 30)}标签")
+    print("-" * 88)
     for w in words:
         print(
-            f"{pad(w['word'], 20)}"
-            f"{pad(STATUS_ZH[w['status']], 8)}"
-            f"{pad(str(w.get('score', 0)), 6)}"
-            f"{pad(cut(w.get('zh') or '—', 26), 28)}"
+            f"{pad(w['word'], 22)}"
+            f"{pad(STATE_ZH['learned' if w.get('learned') else 'open'], 8)}"
+            f"{pad(cut(w.get('zh') or '—', 28), 30)}"
             f"{'/'.join(w.get('tags') or []) or '—'}"
         )
-    print("-" * 82)
+    print("-" * 88)
     print(f"共 {len(words)} 个")
     return 0
 
 
-# ---------------------------------------------------------------- 命令：stats / weeks
-
 def cmd_stats(args) -> int:
     data = load()
     words = data["words"]
-    counts = {s: sum(1 for w in words if w["status"] == s) for s in STATUS_ORDER}
     mon = week_monday(date.today())
     sun = mon + timedelta(days=6)
     new_this = [w for w in words if in_range(w.get("first_seen"), mon, sun)]
-    ok = bad = 0
-    for w in words:
-        for h in w.get("history", []):
-            if in_range(h.get("date"), mon, sun):
-                if h["event"] == "correct":
-                    ok += 1
-                else:
-                    bad += 1
-    acc = (ok / (ok + bad) * 100) if (ok + bad) else None
-    print(f"生词总量     {len(words)}")
-    print(f"待巩固       {counts['learning']}")
-    print(f"复习中       {counts['reviewing']}")
-    print(f"已掌握       {counts['mastered']}")
+    learned_this = [w for w in words if in_range(w.get("learned_at"), mon, sun)]
+    open_count = sum(1 for w in words if not w.get("learned"))
+    print(f"词库总量     {len(words)}")
+    print(f"还没背       {open_count}")
+    print(f"背过了       {len(words) - open_count}")
     print(f"本周新增     {len(new_this)}   （{week_key(mon)} {mon}~{sun}）")
-    print(f"本周答题     {ok + bad} 次，正确率 " + (f"{acc:.0f}%" if acc is not None else "—"))
+    print(f"本周背完     {len(learned_this)}")
     return 0
 
 
 def cmd_weeks(args) -> int:
     data = load()
-    buckets: dict[str, list[dict]] = {}
+    buckets: dict[str, int] = {}
     for w in data["words"]:
-        buckets.setdefault(week_key(parse_date(w.get("first_seen"))), []).append(w)
+        buckets[week_key(parse_date(w.get("first_seen")))] = \
+            buckets.get(week_key(parse_date(w.get("first_seen"))), 0) + 1
     for wk in sorted(buckets):
-        items = buckets[wk]
         mon = parse_week(wk)
-        print(f"{wk}  {mon} ~ {mon + timedelta(days=6)}   新增 {len(items):3d} 个")
+        print(f"{wk}  {mon} ~ {mon + timedelta(days=6)}   新增 {buckets[wk]:3d} 个")
     return 0
 
 
@@ -493,7 +443,7 @@ header{border-bottom:3px double var(--line); padding-bottom:18px; margin-bottom:
 .kicker{font-size:12px; letter-spacing:.18em; color:var(--accent); font-weight:700; text-transform:uppercase}
 h1{font-size:30px; margin:6px 0 4px; letter-spacing:.01em; font-weight:700}
 .meta{font-size:12.5px; color:var(--muted)}
-.stats{display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin:0 0 30px}
+.stats{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:0 0 30px}
 .stat{background:var(--accent-soft); border:1px solid #d8e6de; border-radius:8px; padding:12px 10px; text-align:center}
 .stat .n{font-size:24px; font-weight:700; color:var(--accent); line-height:1.2}
 .stat .l{font-size:11.5px; color:var(--muted); letter-spacing:.04em}
@@ -515,10 +465,6 @@ td.w{font-family:Georgia,"Cambria",serif; font-size:16px; font-weight:600}
 .card-head .w{font-family:Georgia,"Cambria",serif; font-size:19px; font-weight:700; letter-spacing:.01em}
 .card-head .ph{font-size:12px; color:var(--muted); font-family:"Charis SIL","Gentium Plus","Lucida Sans Unicode","Segoe UI","Microsoft YaHei",sans-serif}
 .card-head .pos{font-size:11.5px; color:var(--muted); font-style:italic}
-.badge{margin-left:auto; font-size:10.5px; padding:1px 8px; border-radius:99px; white-space:nowrap}
-.badge.learning{background:var(--warn-soft); color:var(--warn)}
-.badge.reviewing{background:var(--amber-soft); color:var(--amber)}
-.badge.mastered{background:var(--accent-soft); color:var(--accent)}
 .card .zh{font-size:14.5px; font-weight:600; margin:2px 0 6px}
 .colloc{margin:0 0 6px; padding-left:16px; font-size:12.5px; color:#3f3a33}
 .colloc li{margin:1px 0}
@@ -559,10 +505,6 @@ def esc(s) -> str:
     return html.escape(str(s or ""), quote=True)
 
 
-def badge(status: str) -> str:
-    return f'<span class="badge {status}">{STATUS_ZH[status]}</span>'
-
-
 def render_card(w: dict) -> str:
     out = ['<article class="card">', '<div class="card-head">']
     out.append(f'<span class="w">{esc(w["word"])}</span>')
@@ -570,7 +512,6 @@ def render_card(w: dict) -> str:
         out.append(f'<span class="ph">{esc(w["phonetic"])}</span>')
     if w.get("pos"):
         out.append(f'<span class="pos">{esc(w["pos"])}</span>')
-    out.append(badge(w["status"]))
     out.append("</div>")
     if w.get("zh"):
         out.append(f'<div class="zh">{esc(w["zh"])}</div>')
@@ -581,9 +522,8 @@ def render_card(w: dict) -> str:
         out.append("</ul>")
     if w.get("example"):
         out.append(f'<div class="eg">{esc(w["example"])}</div>')
-    notes = [h.get("note") or "" for h in w.get("history", []) if h["event"] in BAD_EVENTS]
-    if notes:
-        out.append(f'<div class="myerr">我曾写错：{esc("；".join(notes[-2:]))}</div>')
+    if w.get("note"):
+        out.append(f'<div class="myerr">当初为什么记它：{esc(w["note"])}</div>')
     out.append("</article>")
     return "".join(out)
 
@@ -594,31 +534,17 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
     wnum = wk.split("-W")[1]
     words = data["words"]
 
-    week_words = sorted(
-        [w for w in words if in_range(w.get("first_seen"), monday, sunday)],
-        key=lambda w: w["word"].lower(),
-    )
-    pending = [w for w in words if w["status"] != "mastered"]
-    pending.sort(key=lambda w: (STATUS_ORDER[w["status"]], w.get("score", 0), w.get("first_seen", "")))
-    mastered_week = [w for w in words if w["status"] == "mastered" and in_range(w.get("last_review"), monday, sunday)]
+    week_words = sorted([w for w in words if in_range(w.get("first_seen"), monday, sunday)],
+                        key=lambda w: w["word"].lower())
+    open_words = [w for w in words if not w.get("learned")]
+    open_words.sort(key=lambda w: (w.get("first_seen") or "", w["word"].lower()))
+    learned_week = sorted([w for w in words if in_range(w.get("learned_at"), monday, sunday)],
+                          key=lambda w: w["word"].lower())
 
-    errors, n_ok, n_bad = [], 0, 0
-    for w in words:
-        for h in w.get("history", []):
-            if in_range(h.get("date"), monday, sunday):
-                if h["event"] == "correct":
-                    n_ok += 1
-                else:
-                    n_bad += 1
-                    errors.append((w, h))
-    errors.sort(key=lambda t: (t[1]["date"], t[0]["word"].lower()), reverse=True)
-    accuracy = (n_ok / (n_ok + n_bad) * 100) if (n_ok + n_bad) else None
-
-    shown = pending[:max_review]
+    shown = open_words[:max_review]
     groups: dict[str, list[dict]] = {}
     for w in shown:
-        tag = (w.get("tags") or ["未分类"])[0]
-        groups.setdefault(tag, []).append(w)
+        groups.setdefault((w.get("tags") or ["未分类"])[0], []).append(w)
     ordered_groups = sorted(groups.items(), key=lambda kv: (kv[0] == "未分类", -len(kv[1]), kv[0]))
 
     h = []
@@ -630,49 +556,42 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
     h.append('<div class="toolbar no-print"><button onclick="window.print()">打印 / 存为 PDF</button></div>')
     h.append('<div class="page">')
 
-    # header
     h.append("<header>")
     h.append('<div class="kicker">English Vocabulary · Weekly</div>')
     h.append(f"<h1>第 {int(wnum)} 周 · 生词报告</h1>")
     h.append(f'<div class="meta">{monday.isoformat()} — {sunday.isoformat()} · {wk} · 生成于 {now_iso()}</div>')
     h.append("</header>")
 
-    # stats
-    acc_txt = f"{accuracy:.0f}%" if accuracy is not None else "—"
     h.append('<div class="stats">')
     for num, label in (
         (len(week_words), "本周新增"),
-        (len(pending), "待巩固"),
-        (len(mastered_week), "本周掌握"),
-        (len(words), "生词总量"),
-        (acc_txt, "本周正确率"),
+        (len(open_words), "还没背"),
+        (len(learned_week), "本周背完"),
+        (len(words), "词库总量"),
     ):
         h.append(f'<div class="stat"><div class="n">{num}</div><div class="l">{label}</div></div>')
     h.append("</div>")
 
-    # 1. 错题档案
-    h.append(f'<h2>一、本周错题档案 <span class="count">{len(errors)} 条</span></h2>')
-    if errors:
-        h.append('<table><thead><tr><th style="width:20%">单词</th><th style="width:24%">正确释义</th>'
-                 '<th style="width:38%">我写错的 / 漏掉的</th><th style="width:18%">日期</th></tr></thead><tbody>')
-        for w, ev in errors:
+    # 一、本周新记
+    h.append(f'<h2>一、本周新记 <span class="count">{len(week_words)} 条</span></h2>')
+    if week_words:
+        h.append('<table><thead><tr><th style="width:20%">单词</th><th style="width:22%">释义</th>'
+                 '<th style="width:40%">当初为什么记它</th><th style="width:18%">日期</th></tr></thead><tbody>')
+        for w in week_words:
             h.append(
                 f'<tr><td class="w">{esc(w["word"])}</td>'
                 f'<td>{esc(w.get("zh") or "—")}</td>'
-                f'<td class="err-bad">{esc(ev.get("note") or "—")}</td>'
-                f'<td>{esc(ev.get("date"))}</td></tr>'
+                f'<td class="err-bad">{esc(w.get("note") or "—")}</td>'
+                f'<td>{esc(w.get("first_seen"))}</td></tr>'
             )
         h.append("</tbody></table>")
     else:
-        h.append('<div class="empty">本周没有错误记录，保持住。</div>')
+        h.append('<div class="empty">这周没有新记的词。</div>')
 
-    # 2. 背诵清单
-    if len(pending) > len(shown):
-        count_txt = f"{len(shown)} 词 / 待巩固共 {len(pending)} 词"
-    else:
-        count_txt = f"{len(shown)} 词"
-    h.append(f'<h2>二、下周背诵清单 <span class="count">{count_txt}</span></h2>')
-    h.append('<p class="hint">按主题归类。先通读一遍，再翻到最后做遮字自测；错题档案里出现过的词优先背。</p>')
+    # 二、还没背的清单
+    count_txt = f"{len(shown)} 词 / 未背共 {len(open_words)} 词" if len(open_words) > len(shown) else f"{len(shown)} 词"
+    h.append(f'<h2>二、还没背的 <span class="count">{count_txt}</span></h2>')
+    h.append('<p class="hint">按主题归类，最早的排在前面。背完一个就告诉 AI「XX 会了」，它会被标成已背、下次不再出现。</p>')
     if ordered_groups:
         for tag, items in ordered_groups:
             h.append('<div class="group">')
@@ -681,24 +600,24 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
             h.extend(render_card(w) for w in items)
             h.append("</div></div>")
     else:
-        h.append('<div class="empty">暂时没有待背的生词。</div>')
-    if len(pending) > len(shown):
-        h.append(f'<p class="hint">另有 {len(pending) - len(shown)} 个词未列入本期，可用 '
-                 f'<code>python vocab.py list --status learning</code> 查看。</p>')
+        h.append('<div class="empty">词库里没有待背的词，干净了。</div>')
+    if len(open_words) > len(shown):
+        h.append(f'<p class="hint">另有 {len(open_words) - len(shown)} 个词未列入本期（上限 {max_review}），'
+                 f'可用 <code>vocab.py list</code> 查看。</p>')
 
-    # 3. 已掌握
-    h.append(f'<h2>三、本周已掌握 <span class="count">{len(mastered_week)} 词</span></h2>')
-    if mastered_week:
+    # 三、本周背完
+    h.append(f'<h2>三、本周背完 <span class="count">{len(learned_week)} 词</span></h2>')
+    if learned_week:
         h.append('<div class="chips">')
-        for w in sorted(mastered_week, key=lambda x: x["word"].lower()):
+        for w in learned_week:
             h.append(f'<span class="chip"><span class="s">{esc(w["word"])}</span> {esc(w.get("zh") or "")}</span>')
         h.append("</div>")
     else:
-        h.append('<div class="empty">还没有词达到「已掌握」（连续答对 ≥ 2 次、分数 ≥ 4）。</div>')
+        h.append('<div class="empty">这周还没标过「背过了」。背完记得说一声，否则它会一直留在清单里。</div>')
 
-    # 4. 遮字自测
+    # 四、遮字自测
     h.append('<h2 class="page-break">四、遮字自测 <span class="count">盖上右列，逐词默写</span></h2>')
-    h.append('<p class="hint">看音标和单词，先在心里（或纸上）说中文和搭配，全部写完再翻回上一页对卡片；对完用 <code>vocab.py mark</code> 记录对错。</p>')
+    h.append('<p class="hint">看单词和音标，写出释义与搭配；写完翻回上一页对卡片。</p>')
     if shown:
         h.append('<table class="quiz"><thead><tr><th style="width:26%">单词</th><th style="width:20%">音标</th>'
                  '<th style="width:54%">释义 / 搭配（自己写）</th></tr></thead><tbody>')
@@ -712,19 +631,19 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
     else:
         h.append('<div class="empty">—</div>')
 
-    # 建议
+    # 五、建议
     tips = []
     if week_words:
-        tips.append(f"本周新增 {len(week_words)} 个词：先看卡片建立印象，再遮字自测，最后用 mark 记录结果。")
-    if n_bad:
-        tips.append(f"本周有 {n_bad} 次写错/漏译记录——错题档案里的词优先，它们是真正没掌握的。")
-    if accuracy is not None and accuracy < 0.6:
-        tips.append("正确率偏低：把自测拆成每天 10 个词，比一次背 30 个有效。")
-    if pending:
-        oldest = min(pending, key=lambda w: w.get("first_seen") or "9999")
-        tips.append(f"最早未掌握的词是 {oldest['word']}（{oldest.get('first_seen')} 加入），别让它跨周太多次。")
+        tips.append(f"本周新记 {len(week_words)} 个词，先把它们读一遍，再看第二页的卡片。")
+    if len(open_words) > 40:
+        tips.append(f"未背词已积到 {len(open_words)} 个，建议每周只新增 10–15 个，否则一页纸装不下。")
+    if not learned_week:
+        tips.append("这周一个词都没标「背过了」。背完记得说一句，不然清单只会变长。")
+    oldest = min(open_words, key=lambda w: w.get("first_seen") or "9999") if open_words else None
+    if oldest:
+        tips.append(f"最早没背的词是 {oldest['word']}（{oldest.get('first_seen')} 记的），别让它跨月。")
     if tips:
-        h.append(f'<h2>五、本周建议</h2><ul class="tips">')
+        h.append('<h2>五、本周建议</h2><ul class="tips">')
         h.extend(f"<li>{esc(t)}</li>" for t in tips)
         h.append("</ul>")
 
@@ -734,9 +653,10 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
     return "\n".join(h)
 
 
+# ---------------------------------------------------------------- 命令：report / weekly
+
 def write_report(data: dict, monday: date, out: Path, max_review: int = 60,
                  title: str | None = None) -> Path:
-    """渲染并落盘一份周报，同时更新心跳（心跳只会前进，不会被旧周覆盖）。"""
     doc = render_html(data, monday, max_review=max_review, title=title)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(doc, encoding="utf-8")
@@ -750,13 +670,11 @@ def write_report(data: dict, monday: date, out: Path, max_review: int = 60,
         except Exception:
             previous = None
     if previous and parse_week(previous) > monday:
-        return out  # 补生成旧周报时，不让心跳倒退
+        return out
     heartbeat.parent.mkdir(parents=True, exist_ok=True)
     heartbeat.write_text(json.dumps({
-        "at": now_iso(),
-        "week": week_key(monday),
-        "words": len(data["words"]),
-        "path": str(out),
+        "at": now_iso(), "week": week_key(monday),
+        "words": len(data["words"]), "path": str(out),
     }, ensure_ascii=False), encoding="utf-8")
     return out
 
@@ -772,8 +690,19 @@ def cmd_report(args) -> int:
     return 0
 
 
+def open_path(path: Path) -> None:
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+    except Exception as exc:  # pragma: no cover
+        print(f"（自动打开失败：{exc}，请手动打开 {path}）", file=sys.stderr)
+
+
 def last_reported_week() -> date | None:
-    """从心跳和已生成的报告文件名里取「覆盖到的最晚一周」。"""
     weeks: list[date] = []
     heartbeat = LOG_DIR / "last-report.json"
     if heartbeat.exists():
@@ -795,39 +724,26 @@ def last_reported_week() -> date | None:
 
 
 def due_weeks(last: date | None, current: date, now: datetime, max_weeks: int = 8) -> list[date]:
-    """列出「已经过了出报告时间、但还没出」的周（按周一表示，升序）。
-
-    规则：某一周的周报，在**该周周日 20:00 之后**就该有了。
-    这样无论是准点跑、晚开机补跑，还是隔了三周才开一次机，都能算出该补哪几周。
-    """
-    if last is None:
-        start = current - timedelta(weeks=max_weeks - 1)
-    else:
-        start = last + timedelta(weeks=1)
+    """某周的周报，在「该周周日 20:00」之后就该有了。返回所有已到期但还没出的周。"""
+    start = (last + timedelta(weeks=1)) if last else (current - timedelta(weeks=max_weeks - 1))
     floor = current - timedelta(weeks=max_weeks - 1)
     if start < floor:
         start = floor
     result: list[date] = []
     monday = start
     while monday <= current:
-        due_at = datetime.combine(monday + timedelta(days=6), time(20, 0))
-        if now >= due_at:
+        if now >= datetime.combine(monday + timedelta(days=6), time(20, 0)):
             result.append(monday)
         monday += timedelta(weeks=1)
     return result
 
 
 def cmd_weekly(args) -> int:
-    """补漏 + 出本周报告。幂等：没有到期的周就什么都不做。
-
-    这是给系统调度用的入口——周日 20:00 触发一次，登录时也触发一次。
-    后者保证「周日没开机」的情况会在下次登录时自动补上，不依赖 StartWhenAvailable。
-    """
+    """补漏 + 出当周。幂等：没有到期的周就什么都不做。"""
     data = load()
     now = datetime.now()
     current = week_monday(now.date())
     pending = due_weeks(last_reported_week(), current, now, args.max_weeks)
-    # 不补「账本里还没有任何词」的那些周：那种周报除了空表什么都没有
     seen = [parse_date(w.get("first_seen")) for w in data["words"] if w.get("first_seen")]
     if seen:
         earliest = week_monday(min(seen))
@@ -851,23 +767,9 @@ def cmd_weekly(args) -> int:
     return 0
 
 
-def open_path(path: Path) -> None:
-    """跨平台用系统默认程序打开文件。"""
-    try:
-        if sys.platform.startswith("win"):
-            os.startfile(str(path))  # type: ignore[attr-defined]
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(path)])
-        else:
-            subprocess.Popen(["xdg-open", str(path)])
-    except Exception as exc:  # pragma: no cover
-        print(f"（自动打开失败：{exc}，请手动打开 {path}）", file=sys.stderr)
-
-
 # ---------------------------------------------------------------- 命令：doctor
 
 def task_info(name: str) -> dict:
-    """查询 Windows 计划任务的状态。非 Windows 或查不到时返回 {'error': ...}。"""
     if not sys.platform.startswith("win"):
         return {"error": "当前不是 Windows，跳过计划任务检查"}
     safe = "".join(ch for ch in name if ch.isalnum() or ch in "_-")
@@ -882,10 +784,8 @@ def task_info(name: str) -> dict:
         "| ConvertTo-Json -Compress"
     )
     try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            capture_output=True, text=True, timeout=30,
-        )
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                           capture_output=True, text=True, timeout=30)
     except Exception as exc:
         return {"error": f"查询失败：{exc}"}
     if r.returncode != 0:
@@ -915,21 +815,20 @@ def cmd_doctor(args) -> int:
     if DATA_FILE.exists():
         add("ok", "数据文件", f"{DATA_FILE}  ({DATA_FILE.stat().st_size / 1024:.1f} KB)")
     else:
-        add("warn", "数据文件", f"{DATA_FILE} 不存在（还没有生词）")
+        add("warn", "数据文件", f"{DATA_FILE} 不存在（还没有词）")
 
     try:
         data = load()
         words = data["words"]
-        cnt = {s: sum(1 for w in words if w["status"] == s) for s in STATUS_ORDER}
-        add("ok", "词库", f"{len(words)} 个词（待巩固 {cnt['learning']} / 复习中 {cnt['reviewing']} / 已掌握 {cnt['mastered']}）")
+        opened = sum(1 for w in words if not w.get("learned"))
+        add("ok", "词库", f"{len(words)} 个词（还没背 {opened} / 背过 {len(words) - opened}）")
         broken = [w for w in words if not w.get("word") or not w.get("zh")]
         if broken:
             add("warn", "字段完整性", f"{len(broken)} 个词缺拼写或释义")
     except Exception as exc:
-        add("bad", "读取账本", f"失败：{exc}")
+        add("bad", "读取词库", f"失败：{exc}")
 
     heartbeat = LOG_DIR / "last-report.json"
-    reports = sorted(REPORT_DIR.glob("vocab-*.html")) if REPORT_DIR.exists() else []
     if heartbeat.exists():
         try:
             info = json.loads(heartbeat.read_text(encoding="utf-8"))
@@ -939,8 +838,6 @@ def cmd_doctor(args) -> int:
                 f"{info['at']}（{info.get('week')}，{info.get('words')} 词，{age} 天前）")
         except Exception:
             add("warn", "最近出报告", "心跳文件存在但无法解析")
-    elif reports:
-        add("warn", "最近出报告", f"{reports[-1].name}（本次部署前生成，无心跳记录）")
     else:
         add("warn", "最近出报告", "还没有生成过任何报告，跑一次 report 试试")
 
@@ -953,8 +850,6 @@ def cmd_doctor(args) -> int:
             add("ok" if code == 0 else "warn", "计划任务",
                 f"{args.task}  {info.get('State')}  下次 {info.get('Next') or '—'}  "
                 f"上次 {info.get('Last') or '从未运行'}  exit={code}")
-            if code == 267011:
-                add("warn", "计划任务", "这个任务还一次都没跑过，可手动触发验证")
 
     icon = {"ok": "✓", "warn": "⚠", "bad": "✗"}
     width = max(dw(r[1]) for r in rows) + 3
@@ -978,64 +873,59 @@ def cmd_doctor(args) -> int:
 # ---------------------------------------------------------------- 入口
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="vocab.py", description="英语生词本：记录、追踪、出周报。")
-    p.add_argument("--version", action="version", version="vocab.py 1.0")
+    p = argparse.ArgumentParser(prog="vocab.py", description="本地生词账本：记下不会的词，每周出一张纸。")
+    p.add_argument("--version", action="version", version="vocab.py 2.0")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    a = sub.add_parser("add", help="添加/合并生词")
-    a.add_argument("word", nargs="?", help="单词（批量导入时可省略）")
+    a = sub.add_parser("add", help="记一个/一批不会的词")
+    a.add_argument("word", nargs="?")
     a.add_argument("--file", help="批量导入 JSON")
     a.add_argument("--zh", default="", help="中文释义")
     a.add_argument("--phonetic", default="", help="音标")
-    a.add_argument("--pos", default="", help="词性，如 n. / v. / adj.")
+    a.add_argument("--pos", default="", help="词性")
     a.add_argument("--colloc", action="append", default=[], help="搭配，可重复")
     a.add_argument("--example", default="", help="例句")
     a.add_argument("--tag", action="append", default=[], help="主题标签，可重复")
     a.add_argument("--source", default="", help="来源说明")
-    a.add_argument("--wrong", action="store_true", help="首次记录即记为错误")
-    a.add_argument("--correct", action="store_true", help="首次记录即记为正确")
-    a.add_argument("--note", default="", help="备注/错因")
-    a.add_argument("--date", default="", help="first_seen 日期 YYYY-MM-DD")
+    a.add_argument("--note", default="", help="当初为什么记它（错因）")
+    a.add_argument("--date", default="", help="录入日期 YYYY-MM-DD")
     a.set_defaults(func=cmd_add)
 
-    m = sub.add_parser("mark", help="记录一次答题结果")
-    m.add_argument("word", nargs="?")
-    m.add_argument("result", nargs="?", choices=["correct", "wrong"])
-    m.add_argument("--file", help="批量结果 JSON")
-    m.add_argument("--note", default="", help="错因说明")
-    m.add_argument("--date", default="", help="日期 YYYY-MM-DD，默认今天")
-    m.set_defaults(func=cmd_mark)
+    for name, func, hlp in (("learn", cmd_learn, "标记背过了"), ("unlearn", cmd_unlearn, "放回未背")):
+        s = sub.add_parser(name, help=hlp)
+        s.add_argument("words", nargs="*", help="一个或多个单词")
+        s.add_argument("--file", help="批量 JSON")
+        s.add_argument("--date", default="", help="日期 YYYY-MM-DD，默认今天")
+        s.set_defaults(func=func)
 
-    l = sub.add_parser("list", help="列出生词")
-    l.add_argument("--status", choices=list(STATUS_ORDER))
+    l = sub.add_parser("list", help="列出词库")
+    l.add_argument("--all", action="store_true", help="连背过的一起列")
+    l.add_argument("--learned", action="store_true", help="只看背过的")
     l.add_argument("--tag")
-    l.add_argument("--week", help="如 2026-W47，按加入周筛选")
+    l.add_argument("--week", help="按录入周筛选，如 2026-W47")
     l.add_argument("--json", action="store_true")
     l.set_defaults(func=cmd_list)
 
-    s = sub.add_parser("stats", help="统计概览")
-    s.set_defaults(func=cmd_stats)
-
-    w = sub.add_parser("weeks", help="按周统计新增")
-    w.set_defaults(func=cmd_weeks)
+    sub.add_parser("stats", help="统计概览").set_defaults(func=cmd_stats)
+    sub.add_parser("weeks", help="按周统计新增").set_defaults(func=cmd_weeks)
 
     r = sub.add_parser("report", help="生成 HTML 周报")
     r.add_argument("--week", help="如 2026-W47，默认本周")
     r.add_argument("--out", help="输出路径")
     r.add_argument("--open", action="store_true", help="生成后用浏览器打开")
-    r.add_argument("--max-review", type=int, default=60, help="背诵清单最多列多少词")
+    r.add_argument("--max-review", type=int, default=60, help="清单最多列多少词")
     r.add_argument("--title", help="自定义标题")
     r.set_defaults(func=cmd_report)
 
-    d = sub.add_parser("doctor", help="自检：账本、报告、计划任务是否正常")
-    d.add_argument("--task", help="顺带检查一个 Windows 计划任务，如 EnglishVocabWeekly")
-    d.set_defaults(func=cmd_doctor)
-
     w2 = sub.add_parser("weekly", help="补漏 + 出当周报告（幂等，给调度用）")
-    w2.add_argument("--open", action="store_true", help="生成后用浏览器打开最新一份")
-    w2.add_argument("--max-review", type=int, default=60, help="背诵清单最多列多少词")
-    w2.add_argument("--max-weeks", type=int, default=8, help="最多往回补几周")
+    w2.add_argument("--open", action="store_true")
+    w2.add_argument("--max-review", type=int, default=60)
+    w2.add_argument("--max-weeks", type=int, default=8)
     w2.set_defaults(func=cmd_weekly)
+
+    d = sub.add_parser("doctor", help="自检：词库、报告、计划任务是否正常")
+    d.add_argument("--task", help="顺带检查一个 Windows 计划任务")
+    d.set_defaults(func=cmd_doctor)
 
     return p
 
