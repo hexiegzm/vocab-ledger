@@ -33,12 +33,12 @@ class RenderTest(unittest.TestCase):
     def test_empty_library_renders_without_crashing(self):
         doc = vocab.render_html({"words": []}, WEEK)
         self.assertIn("<!DOCTYPE html>", doc)
-        self.assertIn("还没背的", doc)
+        self.assertIn("表二 · 不会的词库", doc)
         self.assertIn("这周没有新记的词", doc)
 
     def test_all_sections_present(self):
         doc = vocab.render_html(build(), WEEK)
-        for heading in ("本周新记", "还没背的", "本周背完", "遮字自测", "本周建议"):
+        for heading in ("表一 · 本周新增", "表二 · 不会的词库", "本周背完", "遮字自测", "本周建议"):
             self.assertIn(heading, doc, f"缺少小节：{heading}")
 
     def test_week_filter_applies_to_new_words(self):
@@ -47,9 +47,10 @@ class RenderTest(unittest.TestCase):
         self.assertIn("「减轻」整句没译出来", doc)
         self.assertIn("nuance", doc)  # 上周记的，仍在清单里
 
-    def test_note_is_shown_on_card(self):
+    def test_note_is_shown_in_table(self):
         doc = vocab.render_html(build(), WEEK)
-        self.assertIn("当初为什么记它", doc)
+        self.assertIn("为什么记它", doc)
+        self.assertIn("「减轻」整句没译出来", doc)
 
     def test_learned_word_leaves_the_list_and_quiz(self):
         data = build()
@@ -57,7 +58,7 @@ class RenderTest(unittest.TestCase):
         w["learned"] = True
         w["learned_at"] = "2026-11-18"
         doc = vocab.render_html(data, WEEK)
-        list_section = doc.split("二、还没背的", 1)[1].split("三、本周背完", 1)[0]
+        list_section = doc.split("表二 · 不会的词库", 1)[1].split("本周背完", 1)[0]
         quiz = doc.split("遮字自测", 1)[1]
         self.assertNotIn("mitigate", list_section)      # 不再出现在待背清单
         self.assertNotIn("mitigate", quiz)              # 也不再出现在自测表

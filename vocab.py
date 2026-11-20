@@ -475,6 +475,20 @@ td.w{font-family:Georgia,"Cambria",serif; font-size:16px; font-weight:600}
 .chip .s{font-family:Georgia,serif; font-weight:600}
 .tips{margin:0; padding-left:18px; font-size:13px; color:#3f3a33}
 .tips li{margin:4px 0}
+
+.grid{font-size:13px}
+.grid th{padding:7px 8px}
+.grid td{padding:7px 8px; border-bottom:1px solid var(--line)}
+.grid .small{font-size:12.5px; color:#3f3a33}
+.grid .tagcell{font-size:12px; color:var(--accent); white-space:nowrap}
+.grid .date{white-space:nowrap; color:var(--muted)}
+.grid tbody tr:nth-child(even){background:#fcfaf4}
+.grid td.w{font-size:15.5px}
+input.search{
+  width:100%; padding:9px 12px; font:inherit; font-size:13px; color:var(--ink);
+  border:1px solid var(--line); border-radius:8px; background:#fffefa; outline:none;
+}
+input.search:focus{border-color:var(--accent)}
 .quiz td{height:44px; border-bottom:1px solid #cfc8ba}
 .quiz td.blank{border-bottom:1px solid #b9b1a1}
 footer{margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font-size:11.5px; color:var(--muted)}
@@ -505,27 +519,9 @@ def esc(s) -> str:
     return html.escape(str(s or ""), quote=True)
 
 
-def render_card(w: dict) -> str:
-    out = ['<article class="card">', '<div class="card-head">']
-    out.append(f'<span class="w">{esc(w["word"])}</span>')
-    if w.get("phonetic"):
-        out.append(f'<span class="ph">{esc(w["phonetic"])}</span>')
-    if w.get("pos"):
-        out.append(f'<span class="pos">{esc(w["pos"])}</span>')
-    out.append("</div>")
-    if w.get("zh"):
-        out.append(f'<div class="zh">{esc(w["zh"])}</div>')
-    collocs = [c for c in (w.get("collocations") or []) if c]
-    if collocs:
-        out.append('<ul class="colloc">')
-        out.extend(f"<li>{esc(c)}</li>" for c in collocs)
-        out.append("</ul>")
-    if w.get("example"):
-        out.append(f'<div class="eg">{esc(w["example"])}</div>')
-    if w.get("note"):
-        out.append(f'<div class="myerr">当初为什么记它：{esc(w["note"])}</div>')
-    out.append("</article>")
-    return "".join(out)
+def _cell(w: dict, text: str, cls: str = "") -> str:
+    c = f' class="{cls}"' if cls else ""
+    return f"<td{c}>{text}</td>"
 
 
 def render_html(data: dict, monday: date, max_review: int = 60, title: str | None = None) -> str:
@@ -537,15 +533,15 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
     week_words = sorted([w for w in words if in_range(w.get("first_seen"), monday, sunday)],
                         key=lambda w: w["word"].lower())
     open_words = [w for w in words if not w.get("learned")]
-    open_words.sort(key=lambda w: (w.get("first_seen") or "", w["word"].lower()))
+    # 词库表：按标签分组（未分类最后），组内按字母，方便检索
+    open_words.sort(key=lambda w: (
+        (w.get("tags") or ["未分类"])[0] == "未分类",
+        (w.get("tags") or ["未分类"])[0],
+        w["word"].lower(),
+    ))
     learned_week = sorted([w for w in words if in_range(w.get("learned_at"), monday, sunday)],
                           key=lambda w: w["word"].lower())
-
     shown = open_words[:max_review]
-    groups: dict[str, list[dict]] = {}
-    for w in shown:
-        groups.setdefault((w.get("tags") or ["未分类"])[0], []).append(w)
-    ordered_groups = sorted(groups.items(), key=lambda kv: (kv[0] == "未分类", -len(kv[1]), kv[0]))
 
     h = []
     h.append("<!DOCTYPE html>")
@@ -572,52 +568,78 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
         h.append(f'<div class="stat"><div class="n">{num}</div><div class="l">{label}</div></div>')
     h.append("</div>")
 
-    # 一、本周新记
-    h.append(f'<h2>一、本周新记 <span class="count">{len(week_words)} 条</span></h2>')
+    # ---------------- 表一：本周新增 ----------------
+    h.append(f'<h2>表一 · 本周新增 <span class="count">{len(week_words)} 词</span></h2>')
+    h.append('<p class="hint">只装这一周记下来的词，是本周要背的全部内容。</p>')
     if week_words:
-        h.append('<table><thead><tr><th style="width:20%">单词</th><th style="width:22%">释义</th>'
-                 '<th style="width:40%">当初为什么记它</th><th style="width:18%">日期</th></tr></thead><tbody>')
+        h.append('<table class="grid"><thead><tr>'
+                 '<th style="width:16%">单词</th><th style="width:14%">音标</th>'
+                 '<th style="width:20%">释义</th><th style="width:24%">搭配</th>'
+                 '<th style="width:16%">为什么记它</th><th style="width:10%">日期</th></tr></thead><tbody>')
         for w in week_words:
             h.append(
                 f'<tr><td class="w">{esc(w["word"])}</td>'
-                f'<td>{esc(w.get("zh") or "—")}</td>'
-                f'<td class="err-bad">{esc(w.get("note") or "—")}</td>'
-                f'<td>{esc(w.get("first_seen"))}</td></tr>'
+                + _cell(w, esc(w.get("phonetic") or ""), "ph")
+                + _cell(w, esc(w.get("zh") or "—"))
+                + _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")
+                + _cell(w, esc(w.get("note") or "—"), "err-bad small")
+                + _cell(w, esc(w.get("first_seen") or ""), "small date")
+                + "</tr>"
             )
         h.append("</tbody></table>")
     else:
         h.append('<div class="empty">这周没有新记的词。</div>')
 
-    # 二、还没背的清单
-    count_txt = f"{len(shown)} 词 / 未背共 {len(open_words)} 词" if len(open_words) > len(shown) else f"{len(shown)} 词"
-    h.append(f'<h2>二、还没背的 <span class="count">{count_txt}</span></h2>')
-    h.append('<p class="hint">按主题归类，最早的排在前面。背完一个就告诉 AI「XX 会了」，它会被标成已背、下次不再出现。</p>')
-    if ordered_groups:
-        for tag, items in ordered_groups:
-            h.append('<div class="group">')
-            h.append(f'<div class="group-head"><span class="t">{esc(tag)}</span><span class="c">{len(items)} 词</span></div>')
-            h.append('<div class="cards">')
-            h.extend(render_card(w) for w in items)
-            h.append("</div></div>")
+    # ---------------- 表二：不会的词库 ----------------
+    count_txt = (f"{len(shown)} / {len(open_words)} 词（超出上限未列出）"
+                 if len(open_words) > len(shown) else f"{len(open_words)} 词")
+    h.append(f'<h2>表二 · 不会的词库 <span class="count">{count_txt}</span></h2>')
+    h.append('<p class="hint">全部还没背的词，按主题分组、组内按字母排。背完一个就说一句「XX 会了」，它会从这里消失。</p>')
+    if shown:
+        search_js = (
+            "var v=this.value.toLowerCase();"
+            "document.querySelectorAll('#lib tbody tr').forEach(function(r){"
+            "r.style.display=r.textContent.toLowerCase().indexOf(v)>-1?'':'none'});"
+        )
+        h.append('<div class="no-print" style="margin:-6px 0 10px">'
+                 '<input class="search" id="q" type="search" '
+                 'placeholder="在词库里搜单词或释义…" '
+                 f'oninput="{search_js}">'
+                 "</div>")
+        h.append('<table class="grid" id="lib"><thead><tr>'
+                 '<th style="width:18%">单词</th><th style="width:15%">音标</th>'
+                 '<th style="width:20%">释义</th><th style="width:26%">搭配</th>'
+                 '<th style="width:12%">标签</th><th style="width:11%">记录于</th></tr></thead><tbody>')
+        for w in shown:
+            h.append(
+                f'<tr><td class="w">{esc(w["word"])}</td>'
+                + _cell(w, esc(w.get("phonetic") or ""), "ph")
+                + _cell(w, esc(w.get("zh") or "—"))
+                + _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")
+                + _cell(w, esc((w.get("tags") or ["未分类"])[0]), "tagcell")
+                + _cell(w, esc(w.get("first_seen") or ""), "small date")
+                + "</tr>"
+            )
+        h.append("</tbody></table>")
     else:
         h.append('<div class="empty">词库里没有待背的词，干净了。</div>')
     if len(open_words) > len(shown):
         h.append(f'<p class="hint">另有 {len(open_words) - len(shown)} 个词未列入本期（上限 {max_review}），'
-                 f'可用 <code>vocab.py list</code> 查看。</p>')
+                 f'可用 <code>vocab.py list</code> 查看，或调大 <code>--max-review</code>。</p>')
 
-    # 三、本周背完
-    h.append(f'<h2>三、本周背完 <span class="count">{len(learned_week)} 词</span></h2>')
+    # ---------------- 本周背完 ----------------
+    h.append(f'<h2>本周背完 <span class="count">{len(learned_week)} 词</span></h2>')
     if learned_week:
         h.append('<div class="chips">')
         for w in learned_week:
             h.append(f'<span class="chip"><span class="s">{esc(w["word"])}</span> {esc(w.get("zh") or "")}</span>')
         h.append("</div>")
     else:
-        h.append('<div class="empty">这周还没标过「背过了」。背完记得说一声，否则它会一直留在清单里。</div>')
+        h.append('<div class="empty">这周还没标过「背过了」。背完记得说一声，否则它会一直留在表二里。</div>')
 
-    # 四、遮字自测
-    h.append('<h2 class="page-break">四、遮字自测 <span class="count">盖上右列，逐词默写</span></h2>')
-    h.append('<p class="hint">看单词和音标，写出释义与搭配；写完翻回上一页对卡片。</p>')
+    # ---------------- 遮字自测 ----------------
+    h.append('<h2 class="page-break">遮字自测 <span class="count">盖上右列，逐词默写</span></h2>')
+    h.append('<p class="hint">用表二的词抽查。看单词和音标，写出释义与搭配；写完翻回上一页对表。</p>')
     if shown:
         h.append('<table class="quiz"><thead><tr><th style="width:26%">单词</th><th style="width:20%">音标</th>'
                  '<th style="width:54%">释义 / 搭配（自己写）</th></tr></thead><tbody>')
@@ -631,19 +653,19 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
     else:
         h.append('<div class="empty">—</div>')
 
-    # 五、建议
+    # ---------------- 建议 ----------------
     tips = []
     if week_words:
-        tips.append(f"本周新记 {len(week_words)} 个词，先把它们读一遍，再看第二页的卡片。")
+        tips.append(f"表一有 {len(week_words)} 个词，先把这张表读完，再扫一眼表二里有没有老朋友。")
     if len(open_words) > 40:
-        tips.append(f"未背词已积到 {len(open_words)} 个，建议每周只新增 10–15 个，否则一页纸装不下。")
+        tips.append(f"词库已积到 {len(open_words)} 个，建议每周只新增 10–15 个，否则表二会越来越长。")
     if not learned_week:
-        tips.append("这周一个词都没标「背过了」。背完记得说一句，不然清单只会变长。")
+        tips.append("这周一个词都没标「背过了」。背完说一句，不然表二只会变长。")
     oldest = min(open_words, key=lambda w: w.get("first_seen") or "9999") if open_words else None
     if oldest:
         tips.append(f"最早没背的词是 {oldest['word']}（{oldest.get('first_seen')} 记的），别让它跨月。")
     if tips:
-        h.append('<h2>五、本周建议</h2><ul class="tips">')
+        h.append('<h2>本周建议</h2><ul class="tips">')
         h.extend(f"<li>{esc(t)}</li>" for t in tips)
         h.append("</ul>")
 
