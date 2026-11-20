@@ -55,11 +55,12 @@ import html
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import unicodedata
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 # ---------------------------------------------------------------- 路径与常量
@@ -717,17 +718,23 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
     return "\n".join(h)
 
 
-def cmd_report(args) -> int:
-    data = load()
-    monday = parse_week(args.week)
-    doc = render_html(data, monday, max_review=args.max_review, title=args.title)
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    out = Path(args.out) if args.out else REPORT_DIR / f"vocab-{week_key(monday)}.html"
+def write_report(data: dict, monday: date, out: Path, max_review: int = 60,
+                 title: str | None = None) -> Path:
+    """渲染并落盘一份周报，同时更新心跳（心跳只会前进，不会被旧周覆盖）。"""
+    doc = render_html(data, monday, max_review=max_review, title=title)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(doc, encoding="utf-8")
     log(f"report: {out} week={week_key(monday)} words={len(data['words'])}")
-    # 心跳：记录「最后一次成功出报告」的时间，doctor 用它判断调度是否还活着
+
     heartbeat = LOG_DIR / "last-report.json"
+    previous = None
+    if heartbeat.exists():
+        try:
+            previous = json.loads(heartbeat.read_text(encoding="utf-8")).get("week")
+        except Exception:
+            previous = None
+    if previous and parse_week(previous) > monday:
+        return out  # 补生成旧周报时，不让心跳倒退
     heartbeat.parent.mkdir(parents=True, exist_ok=True)
     heartbeat.write_text(json.dumps({
         "at": now_iso(),
@@ -735,9 +742,96 @@ def cmd_report(args) -> int:
         "words": len(data["words"]),
         "path": str(out),
     }, ensure_ascii=False), encoding="utf-8")
+    return out
+
+
+def cmd_report(args) -> int:
+    data = load()
+    monday = parse_week(args.week)
+    out = Path(args.out) if args.out else REPORT_DIR / f"vocab-{week_key(monday)}.html"
+    write_report(data, monday, out, args.max_review, args.title)
     print(f"✅ 周报已生成：{out}")
     if args.open:
         open_path(out)
+    return 0
+
+
+def last_reported_week() -> date | None:
+    """从心跳和已生成的报告文件名里取「覆盖到的最晚一周」。"""
+    weeks: list[date] = []
+    heartbeat = LOG_DIR / "last-report.json"
+    if heartbeat.exists():
+        try:
+            wk = json.loads(heartbeat.read_text(encoding="utf-8")).get("week")
+            if wk:
+                weeks.append(parse_week(wk))
+        except Exception:
+            pass
+    if REPORT_DIR.exists():
+        for p in REPORT_DIR.glob("vocab-*.html"):
+            m = re.match(r"vocab-(\d{4}-W\d{2})", p.name)
+            if m:
+                try:
+                    weeks.append(parse_week(m.group(1)))
+                except Exception:
+                    pass
+    return max(weeks) if weeks else None
+
+
+def due_weeks(last: date | None, current: date, now: datetime, max_weeks: int = 8) -> list[date]:
+    """列出「已经过了出报告时间、但还没出」的周（按周一表示，升序）。
+
+    规则：某一周的周报，在**该周周日 20:00 之后**就该有了。
+    这样无论是准点跑、晚开机补跑，还是隔了三周才开一次机，都能算出该补哪几周。
+    """
+    if last is None:
+        start = current - timedelta(weeks=max_weeks - 1)
+    else:
+        start = last + timedelta(weeks=1)
+    floor = current - timedelta(weeks=max_weeks - 1)
+    if start < floor:
+        start = floor
+    result: list[date] = []
+    monday = start
+    while monday <= current:
+        due_at = datetime.combine(monday + timedelta(days=6), time(20, 0))
+        if now >= due_at:
+            result.append(monday)
+        monday += timedelta(weeks=1)
+    return result
+
+
+def cmd_weekly(args) -> int:
+    """补漏 + 出本周报告。幂等：没有到期的周就什么都不做。
+
+    这是给系统调度用的入口——周日 20:00 触发一次，登录时也触发一次。
+    后者保证「周日没开机」的情况会在下次登录时自动补上，不依赖 StartWhenAvailable。
+    """
+    data = load()
+    now = datetime.now()
+    current = week_monday(now.date())
+    pending = due_weeks(last_reported_week(), current, now, args.max_weeks)
+    # 不补「账本里还没有任何词」的那些周：那种周报除了空表什么都没有
+    seen = [parse_date(w.get("first_seen")) for w in data["words"] if w.get("first_seen")]
+    if seen:
+        earliest = week_monday(min(seen))
+        pending = [m for m in pending if m >= earliest]
+    if not pending:
+        print("本周已是最新，无需生成。")
+        return 0
+    made: list[Path] = []
+    for monday in pending:
+        out = REPORT_DIR / f"vocab-{week_key(monday)}.html"
+        write_report(data, monday, out, args.max_review)
+        made.append(out)
+        print(f"✅ {week_key(monday)} {out}")
+    backfilled = sum(1 for m in pending if m < current)
+    if backfilled == len(made):
+        print(f"（补生成了 {backfilled} 份历史周报）")
+    elif backfilled:
+        print(f"（含 {backfilled} 份补生成的历史周报）")
+    if args.open:
+        open_path(made[-1])
     return 0
 
 
@@ -920,6 +1014,12 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("doctor", help="自检：账本、报告、计划任务是否正常")
     d.add_argument("--task", help="顺带检查一个 Windows 计划任务，如 EnglishVocabWeekly")
     d.set_defaults(func=cmd_doctor)
+
+    w2 = sub.add_parser("weekly", help="补漏 + 出当周报告（幂等，给调度用）")
+    w2.add_argument("--open", action="store_true", help="生成后用浏览器打开最新一份")
+    w2.add_argument("--max-review", type=int, default=60, help="背诵清单最多列多少词")
+    w2.add_argument("--max-weeks", type=int, default=8, help="最多往回补几周")
+    w2.set_defaults(func=cmd_weekly)
 
     return p
 

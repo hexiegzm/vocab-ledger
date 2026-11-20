@@ -15,7 +15,9 @@ crontab -e
 加一行（每周日 20:00）：
 
 ```cron
-0 20 * * 0 cd /path/to/vocab-ledger && /usr/bin/python3 vocab.py report --open >> logs/cron.log 2>&1
+0 20 * * 0 cd /path/to/vocab-ledger && /usr/bin/python3 vocab.py weekly --open >> logs/cron.log 2>&1
+
+# 每次登录时补漏（GUI 桌面可以用登录项，或者加在 ~/.profile 里）
 ```
 
 - 路径写绝对路径，cron 的环境变量和你的终端不一样。
@@ -60,18 +62,31 @@ launchctl load ~/Library/LaunchAgents/com.user.vocab-ledger.plist
 chcp 65001 >nul
 cd /d "%~dp0"
 if not exist logs mkdir logs
-python vocab.py report --open >> "logs\weekly.log" 2>&1
+python vocab.py weekly --open >> "logs\weekly.log" 2>&1
+if errorlevel 1 python vocab.py weekly --open >> "logs\weekly.log" 2>&1
 echo exit=%errorlevel% >> "logs\weekly.log"
 ```
 
-注册任务（PowerShell，管理员不需要）：
+注册**两个**任务，指向同一个 `weekly.cmd`：
 
 ```powershell
-$action  = New-ScheduledTaskAction -Execute "C:\path\to\vocab-ledger\weekly.cmd" -WorkingDirectory "C:\path\to\vocab-ledger"
-$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "20:00"
+$action   = New-ScheduledTaskAction -Execute "C:\path\to\weekly.cmd" -WorkingDirectory "C:\path\to\vocab-ledger"
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
-Register-ScheduledTask -TaskName "VocabLedgerWeekly" -Action $action -Trigger $trigger -Settings $settings -Force
+
+# ① 每周日 20:00 正常出报告
+Register-ScheduledTask -TaskName "VocabLedgerWeekly" -Action $action `
+  -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "20:00") `
+  -Settings $settings -Force
+
+# ② 每次登录补漏（周日没开机的情况）
+Register-ScheduledTask -TaskName "VocabLedgerCatchup" -Action $action `
+  -Trigger (New-ScheduledTaskTrigger -AtLogOn) `
+  -Settings $settings -Force
 ```
+
+为什么用 `vocab.py weekly` 而不是 `report`：`weekly` 只生成「到期且还没生成」的周，所以两个触发器同时存在也不会重复出报告；而且它会把漏掉的整周补出来，不是只补最近一次。
+
+> 实测坑：已经存在的任务用 `Register-ScheduledTask -Force` 去改触发器，可能报 `Access is denied`；直接**新建一个任务**指向同一个脚本更省事（两个任务都幂等，重叠无害）。
 
 常用操作：
 

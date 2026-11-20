@@ -80,6 +80,7 @@ python vocab.py stats                            # 总账
 python vocab.py weeks                            # 按周统计
 python vocab.py report --open                    # 出周报
 python vocab.py report --week 2026-W46 --open     # 补出旧周报
+python vocab.py weekly --open                     # 补漏 + 出当周（幂等，给调度用）
 python vocab.py doctor --task VocabLedgerWeekly   # 自检：账本 / 报告 / 计划任务
 ```
 
@@ -120,8 +121,15 @@ python vocab.py doctor --task VocabLedgerWeekly   # 自检：账本 / 报告 / �
 
 ```bash
 # Linux / macOS，每周日 20:00
-0 20 * * 0 cd /path/to/vocab-ledger && python vocab.py report --open
+0 20 * * 0 cd /path/to/vocab-ledger && python vocab.py weekly --open
 ```
+
+`weekly` 是幂等的：它只生成「已经过了周日 20:00、但还没生成」的那些周。所以可以放心绑定两个触发器——
+
+- **每周日 20:00**：正常出本周报告
+- **每次登录**：检查有没有漏掉的周，有就补上
+
+这样「周日没开机」不再是问题：下周第一次开机，登录触发的那一次会把漏掉的周报补出来，不需要你记得、也不需要等到下周日。
 
 Windows、macOS 的写法，以及「为什么不内置调度器」，见 [docs/scheduling.md](docs/scheduling.md)。
 
