@@ -25,7 +25,7 @@
 
 ## 30 秒上手
 
-只需要 Python 3.9+，没有第三方依赖。
+只需要 Python 3.10+，没有第三方依赖。
 
 ```bash
 git clone https://github.com/hexiegzm/vocab-ledger.git
