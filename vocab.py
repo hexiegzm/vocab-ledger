@@ -516,6 +516,12 @@ a.stat:hover{border-color:var(--accent)}
 .panel.on{display:block}
 .panel h2{margin-top:6px}
 .badge{font-size:11px; padding:2px 8px; border-radius:99px}
+.answer{display:none}
+.card.reveal .answer{display:block}
+@media print{.answer{display:block}}
+.card{cursor:pointer}
+.card .tip{opacity:.55; font-size:12px; color:var(--muted)}
+.card.reveal .tip{display:none}
 .badge.star{background:#fdf3dd; color:#8a5a00; border:1px solid #e3c27a}
 .badge.killed{background:var(--accent-soft); color:var(--accent); border:1px solid #cfe0d6}
 .stat .n{font-size:24px; font-weight:700; color:var(--accent); line-height:1.2}
@@ -732,7 +738,9 @@ document.addEventListener('click', e => {
   const btn = e.target.closest('.act');
   if (btn) { e.stopPropagation(); act(btn.closest('.card'), btn.dataset.act); return; }
   const a = e.target.closest('.tabbar a');
-  if (a) { show(a.dataset.panel); }
+  if (a) { show(a.dataset.panel); return; }
+  const card = e.target.closest('.card');
+  if (card) card.classList.toggle('reveal');   // 点卡片揭晓答案
 });
 
 document.addEventListener('keydown', e => {
@@ -748,7 +756,8 @@ filter();
 """
 
 
-def _word_card(w: dict, interactive: bool, meta: str = "", show_note: bool = True) -> str:
+def _word_card(w: dict, interactive: bool, meta: str = "", show_note: bool = True,
+               masked: bool = False) -> str:
     collocs = "".join(f"<li>{esc(c)}</li>" for c in (w.get("collocations") or []) if c)
     star = ' class="act star on"' if w.get("starred") else ' class="act star"'
     kill = ' class="act kill on"' if w.get("learned") else ' class="act kill"'
@@ -776,10 +785,12 @@ def _word_card(w: dict, interactive: bool, meta: str = "", show_note: bool = Tru
         + (f'<span class="pos">{esc(w["pos"])}</span>' if w.get("pos") else "")
         + acts
         + "</div>"
+        + ('<div class="tip">点一下看答案</div><div class="answer">' if masked else "")
         + (f'<div class="zh">{esc(w["zh"])}</div>' if w.get("zh") else "")
         + (f'<ul class="colloc">{collocs}</ul>' if collocs else "")
         + (f'<div class="eg">{esc(w["example"])}</div>' if w.get("example") else "")
         + (f'<div class="myerr">当初为什么记它：{esc(w["note"])}</div>' if show_note and w.get("note") else "")
+        + ("</div>" if masked else "")
         + "</article>"
     )
 
@@ -795,8 +806,8 @@ def render_app(data: dict, monday: date, max_review: int = 60,
     open_words = st["open_words"]
     shown = open_words[:max_review]
 
-    def cards(items, meta_fn, note=True):
-        return "".join(_word_card(w, interactive, meta_fn(w), note) for w in items)
+    def cards(items, meta_fn, note=True, masked=False):
+        return "".join(_word_card(w, interactive, meta_fn(w), note, masked) for w in items)
 
     panels = []
 
@@ -805,7 +816,7 @@ def render_app(data: dict, monday: date, max_review: int = 60,
         "study",
         "背词",
         len(open_words),
-        cards(shown, lambda w: "", note=True) or
+        cards(shown, lambda w: "", note=True, masked=True) or
         '<div class="empty">没有待背的词。去<a href="#" onclick="show(\'kill\');return false">斩词</a>看看斩过什么。</div>',
     ))
     panels.append((
@@ -876,6 +887,9 @@ def render_app(data: dict, monday: date, max_review: int = 60,
         on = " on" if i == 0 else ""
         h.append(f'<section class="panel{on}" id="p-{key}" data-panel="{key}">')
         h.append(f'<h2>{label}<span class="count">{count} 词</span></h2>')
+        if key == "study":
+            h.append('<p class="hint">先看词，心里过一遍意思，再点卡片揭晓。'
+                     '要看全部索引（带标签和日期）去「表二」。</p>')
         h.append('<div class="cards">')
         h.append(body)
         h.append("</div></section>")
