@@ -94,11 +94,12 @@ class AppTest(unittest.TestCase):
             doc = vocab.render_app({"words": []}, WEEK, interactive=interactive)
             self.assertIn("<!DOCTYPE html>", doc)
 
-    def test_review_js_writes_learn_not_kill(self):
-        """点击传的是 kill，但卡片状态字段必须是 learn，否则点了不重排。"""
+    def test_interactive_js_refreshes_panels(self):
+        """点完必须按服务端重绘，否则斩掉的卡片还留在待背列表里。"""
         doc = vocab.render_app(build(), WEEK, interactive=True)
-        self.assertIn("const key = field === 'star' ? 'star' : 'learn';", doc)
-        self.assertIn("card.dataset[key] =", doc)
+        self.assertIn("await refreshPanels();", doc)
+        self.assertIn("fetch('/', { cache: 'no-store' })", doc)
+        self.assertIn("if (name === 'study' || name === 't2') ok = !learned;", doc)
 
 
 if __name__ == "__main__":

@@ -651,19 +651,62 @@ PANELS = (
 
 APP_JS = r"""
 let tab = 'study';
-function panels(){ return document.querySelectorAll('.panel'); }
+
+function cardsIn(panel){ return [...panel.querySelectorAll('.card')]; }
+function panelOf(name){ return document.querySelector('.panel[data-panel="' + name + '"]'); }
+
+function recount(){
+  const uniq = new Map();
+  document.querySelectorAll('.panel .card').forEach(c => uniq.set(c.dataset.word, c));
+  const vals = [...uniq.values()];
+  const open = vals.filter(c => c.dataset.learn === '0').length;
+  const star = vals.filter(c => c.dataset.star === '1').length;
+  const kill = vals.filter(c => c.dataset.learn === '1').length;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('n-study', open); set('n-t2', open);
+  set('n-fav', star); set('n-kill', kill);
+}
+
+function filter(){
+  const q = (document.getElementById('q').value || '').trim().toLowerCase();
+  document.querySelectorAll('.panel').forEach(p => {
+    const name = p.dataset.panel;
+    cardsIn(p).forEach(c => {
+      let ok = !q || c.textContent.toLowerCase().indexOf(q) > -1;
+      if (ok) {
+        const learned = c.dataset.learn === '1';
+        const starred = c.dataset.star === '1';
+        if (name === 'study' || name === 't2') ok = !learned;   // 斩了就离开待背
+        else if (name === 'fav') ok = starred;                   // 取消收藏就离开
+        else if (name === 'kill') ok = learned;                  // 取消斩就离开
+      }
+      c.style.display = ok ? '' : 'none';
+    });
+  });
+}
+
 function show(name){
   tab = name;
-  panels().forEach(p => p.classList.toggle('on', p.dataset.panel === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.dataset.panel === name));
   document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.panel === name));
   filter();
 }
-function filter(){
-  const q = (document.getElementById('q').value || '').trim().toLowerCase();
-  document.querySelectorAll('.panel.on .card').forEach(c => {
-    c.style.display = (!q || c.textContent.toLowerCase().indexOf(q) > -1) ? '' : 'none';
-  });
+
+async function refreshPanels(){
+  try {
+    const r = await fetch('/', { cache: 'no-store' });
+    if (!r.ok) return;
+    const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+    document.querySelectorAll('.panel').forEach(p => {
+      const src = doc.querySelector('.panel[data-panel="' + p.dataset.panel + '"]');
+      const dst = p.querySelector('.cards');
+      if (src && dst) dst.innerHTML = src.querySelector('.cards').innerHTML;
+    });
+    recount();
+    filter();
+  } catch (e) { /* 刷新失败就保持现状 */ }
 }
+
 async function act(card, field){
   const value = card.dataset[field] !== '1';
   const body = { word: card.dataset.word, field: field === 'star' ? 'star' : 'learn', value: value };
@@ -675,34 +718,16 @@ async function act(card, field){
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
   } catch (e) { alert('写入失败：' + e.message); return; }
-  const key = field === 'star' ? 'star' : 'learn';
-  card.dataset[key] = value ? '1' : '0';
-  const btn = card.querySelector('.act.' + field);
-  if (btn) {
-    btn.classList.toggle('on', value);
-    btn.textContent = field === 'star' ? (value ? '★' : '☆') : (value ? '斩了' : '斩');
-  }
-  card.classList.add('leaving');
-  setTimeout(() => { card.classList.remove('leaving'); recount(); filter(); }, 180);
+  await refreshPanels();   // 以服务端为准重绘，计数和列表一起更新
 }
-function recount(){
-  const all = [...document.querySelectorAll('.card')];
-  const uniq = new Map();
-  all.forEach(c => uniq.set(c.dataset.word, c));
-  const vals = [...uniq.values()];
-  const open = vals.filter(c => c.dataset.learn === '0').length;
-  const star = vals.filter(c => c.dataset.star === '1').length;
-  const kill = vals.filter(c => c.dataset.learn === '1').length;
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  set('n-study', open); set('n-t2', open); set('n-fav', star); set('n-kill', kill);
-}
-setInterval(() => { fetch('/ping').catch(() => {}); }, 60000);
-document.querySelectorAll('.tabbar a').forEach(a => {
-  a.addEventListener('click', () => show(a.dataset.panel));
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.act');
+  if (btn) { e.stopPropagation(); act(btn.closest('.card'), btn.dataset.act); return; }
+  const a = e.target.closest('.tabbar a');
+  if (a) { show(a.dataset.panel); }
 });
-document.querySelectorAll('.act').forEach(b => {
-  b.addEventListener('click', e => { e.stopPropagation(); act(b.closest('.card'), b.dataset.act); });
-});
+
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   if (e.key === '1' || e.key === '2') {
@@ -710,6 +735,9 @@ document.addEventListener('keydown', e => {
     if (card) { e.preventDefault(); act(card, e.key === '1' ? 'star' : 'kill'); }
   }
 });
+
+setInterval(() => { fetch('/ping').catch(() => {}); }, 60000);
+filter();
 """
 
 
