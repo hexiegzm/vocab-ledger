@@ -7,7 +7,7 @@
 >
 > 不需要 Anki，不需要账号，不联网。
 
-![周报预览](docs/preview.png)
+![背词页：卡片 + ☆收藏 / 斩 按钮](docs/preview.png)
 
 ---
 
@@ -200,6 +200,8 @@ $ python vocab.py doctor --task VocabLedgerWeekly
 报告每次生成都会写一个心跳文件（`logs/last-report.json`），`doctor` 靠它判断「调度还活着吗」，而不是靠你回想。
 
 ## 报告里有什么
+
+![周报：两张表 + 遮字自测](docs/preview-report.png)
 
 两张表，职责不同：
 
