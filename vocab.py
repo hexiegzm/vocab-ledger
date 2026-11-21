@@ -45,6 +45,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time as _time
 import unicodedata
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -529,7 +530,7 @@ td.w{font-family:Georgia,"Cambria",serif; font-size:16px; font-weight:600}
 .group-head .c{font-size:11.5px; color:var(--muted)}
 .cards{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .card{position:relative; border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:#fffefa; break-inside:avoid}
-.card-head{display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:4px}
+.card-head{display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:4px; padding-right:150px}
 .card-head .w{font-family:Georgia,"Cambria",serif; font-size:19px; font-weight:700; letter-spacing:.01em}
 .card-head .ph{font-size:12px; color:var(--muted); font-family:"Charis SIL","Gentium Plus","Lucida Sans Unicode","Segoe UI","Microsoft YaHei",sans-serif}
 .card-head .pos{font-size:11.5px; color:var(--muted); font-style:italic}
@@ -568,8 +569,10 @@ footer{margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font
 }
 .empty{color:var(--muted); font-size:13px; padding:10px 0}
 .acts{position:absolute; right:12px; top:12px; display:flex; gap:6px}
-.act{font:inherit; font-size:12px; line-height:1; padding:7px 10px; border-radius:8px; cursor:pointer;
-  border:1px solid var(--line); background:#fff; color:#6f6a63; min-width:34px}
+.act{font:inherit; font-size:12px; line-height:1; padding:7px 11px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--line); background:#fff; color:#6f6a63; min-width:62px; white-space:nowrap}
+.act.star{border-color:#e6dcc4}
+.act.kill{border-color:#d8e0da}
 .act:hover{border-color:#c9c2b4}
 .act.star.on{background:#fdf3dd; border-color:#e3c27a; color:#8a5a00}
 .act.kill.on{background:var(--accent-soft); border-color:#cfe0d6; color:var(--accent)}
@@ -693,6 +696,7 @@ function recount(){
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('n-study', open); set('n-t2', open); set('n-fav', star); set('n-kill', kill);
 }
+setInterval(() => { fetch('/ping').catch(() => {}); }, 60000);
 document.querySelectorAll('.tabbar a').forEach(a => {
   a.addEventListener('click', () => show(a.dataset.panel));
 });
@@ -715,8 +719,8 @@ def _word_card(w: dict, interactive: bool, meta: str = "", show_note: bool = Tru
     kill = ' class="act kill on"' if w.get("learned") else ' class="act kill"'
     if interactive:
         acts = (f'<div class="acts">'
-                f'<button{star} data-act="star">{"★" if w.get("starred") else "☆"}</button>'
-                f'<button{kill} data-act="kill">{"斩了" if w.get("learned") else "斩"}</button>'
+                f'<button{star} data-act="star">{"★ 已收藏" if w.get("starred") else "☆ 收藏"}</button>'
+                f'<button{kill} data-act="kill">{"✓ 已斩" if w.get("learned") else "斩"}</button>'
                 f'</div>')
         dataset = (f' data-word="{esc(w["word"])}" data-learn="{1 if w.get("learned") else 0}" '
                    f'data-star="{1 if w.get("starred") else 0}"')
@@ -825,9 +829,12 @@ def render_app(data: dict, monday: date, max_review: int = 60,
     h.append("</nav>")
     h.append('<input id="q" class="search" type="search" placeholder="搜单词或释义…" oninput="filter()">')
     h.append("</div>")
-    if not interactive:
+    if interactive:
+        h.append('<p class="hint no-print"><b>☆ 收藏</b> = 写作时想留着，进收藏夹，斩了也不消失；'
+                 '<b>斩</b> = 已经背过，从待背里移走。键盘 <code>1</code> 收藏、<code>2</code> 斩。</p>')
+    else:
         h.append('<p class="hint no-print">这是<strong>只读版</strong>（生成好的 HTML 写不了文件）。'
-                 '要能点「☆ 收藏 / 斩」，在终端运行：<code>python vocab.py review --open</code></p>')
+                 '要能点「☆ 收藏 / 斩」，在终端运行：<code>python vocab.py app --open</code></p>')
 
     for i, (key, label, count, body) in enumerate(panels):
         on = " on" if i == 0 else ""
@@ -1106,6 +1113,7 @@ def cmd_review(args) -> int:
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     lock = threading.Lock()
+    last = {"t": _time.time()}
     data = load()
     if DATA_FILE.exists():
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -1128,8 +1136,11 @@ def cmd_review(args) -> int:
             return host in ("127.0.0.1", "localhost")
 
         def do_GET(self):
+            last["t"] = _time.time()
             if not self._guard():
                 return self._send(403, b"forbidden", "text/plain; charset=utf-8")
+            if self.path.split("?")[0] == "/ping":
+                return self._send(200, b"ok", "text/plain; charset=utf-8")
             if self.path.split("?")[0] not in ("/", "/index.html"):
                 return self._send(404, b"not found", "text/plain; charset=utf-8")
             with lock:
@@ -1191,9 +1202,21 @@ def cmd_review(args) -> int:
     else:
         raise SystemExit("找不到可用端口")
 
+    if args.idle:
+        def watchdog():
+            while True:
+                _time.sleep(10)
+                if _time.time() - last["t"] > args.idle * 60:
+                    print(f"\n空闲 {args.idle} 分钟，自动退出。")
+                    server.shutdown()
+                    return
+        threading.Thread(target=watchdog, daemon=True).start()
+
     url = f"http://127.0.0.1:{port}/"
     print(f"背词页已启动：{url}")
     print("按 Ctrl+C 结束。数据直接写入 data/words.json。")
+    if args.idle:
+        print(f"页面关掉 {args.idle} 分钟后自动退出。")
     if args.open:
         open_path(url)
     try:
@@ -1262,9 +1285,12 @@ def build_parser() -> argparse.ArgumentParser:
     w2.add_argument("--max-weeks", type=int, default=8)
     w2.set_defaults(func=cmd_weekly)
 
-    rv = sub.add_parser("review", help="本地背词页：卡片 + 收藏/斩按钮，直写词库")
+    rv = sub.add_parser("review", help="本地背词页：卡片 + 收藏/斩按钮，直写词库",
+                        aliases=["app"])
     rv.add_argument("--port", type=int, default=8765, help="端口，默认 8765，占用则自动顺延")
     rv.add_argument("--open", action="store_true", help="启动后打开浏览器")
+    rv.add_argument("--idle", type=int, default=30,
+                    help="标签页关闭后多少分钟自动退出，默认 30，0 表示不退出")
     rv.set_defaults(func=cmd_review)
 
     d = sub.add_parser("doctor", help="自检：词库、报告、计划任务是否正常")
