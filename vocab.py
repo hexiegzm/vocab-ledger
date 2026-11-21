@@ -708,8 +708,11 @@ async function refreshPanels(){
 }
 
 async function act(card, field){
-  const value = card.dataset[field] !== '1';
-  const body = { word: card.dataset.word, field: field === 'star' ? 'star' : 'learn', value: value };
+  // 注意：按钮传的是 'kill'，但卡片上的状态字段是 data-learn，必须显式映射
+  const isStar = field === 'star';
+  const current = isStar ? card.dataset.star : card.dataset.learn;
+  const value = current !== '1';
+  const body = { word: card.dataset.word, field: isStar ? 'star' : 'learn', value: value };
   try {
     const r = await fetch('/api/mark', {
       method: 'POST',

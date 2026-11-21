@@ -100,6 +100,8 @@ class AppTest(unittest.TestCase):
         self.assertIn("await refreshPanels();", doc)
         self.assertIn("fetch('/', { cache: 'no-store' })", doc)
         self.assertIn("if (name === 'study' || name === 't2') ok = !learned;", doc)
+        # 按钮传 'kill'，状态字段是 data-learn：不映射就会「只能斩、不能取消」
+        self.assertIn("const current = isStar ? card.dataset.star : card.dataset.learn;", doc)
 
 
 if __name__ == "__main__":
