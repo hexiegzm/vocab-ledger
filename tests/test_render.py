@@ -94,6 +94,29 @@ class AppTest(unittest.TestCase):
             doc = vocab.render_app({"words": []}, WEEK, interactive=interactive)
             self.assertIn("<!DOCTYPE html>", doc)
 
+    def test_week_ordinal_counts_from_first_word(self):
+        data = build()
+        # 最早词在 2026-11-10（W46 周二）→ 那周是第 1 周
+        self.assertEqual(vocab.week_ordinal(data, date(2026, 11, 9)), 1)
+        self.assertEqual(vocab.week_ordinal(data, date(2026, 11, 16)), 2)
+        self.assertEqual(vocab.week_ordinal(data, date(2026, 12, 7)), 5)
+
+    def test_title_uses_ordinal_not_iso_week(self):
+        doc = vocab.render_html(build(), WEEK)   # 2026-W47，但首个词在 W46
+        self.assertIn("<h1>第 2 周 · 生词报告</h1>", doc)
+        self.assertNotIn("第 47 周", doc)
+
+    def test_kind_badge_and_distribution(self):
+        data = build()
+        vocab.find_word(data, "mitigate")["kind"] = "拼写"
+        vocab.upsert(data, {"word": "give", "zh": "给", "kind": "语法", "first_seen": "2026-11-17"})
+        doc = vocab.render_html(data, WEEK)
+        self.assertIn('class="kind"', doc)
+        self.assertIn('class="chips dist"', doc)
+        dist = doc.split('class="chips dist"', 1)[1].split("</div>", 1)[0]
+        self.assertIn("拼写", dist)
+        self.assertIn("语法", dist)
+
     def test_interactive_js_refreshes_panels(self):
         """点完必须按服务端重绘，否则斩掉的卡片还留在待背列表里。"""
         doc = vocab.render_app(build(), WEEK, interactive=True)

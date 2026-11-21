@@ -2,7 +2,7 @@
 
 ![tests](https://github.com/hexiegzm/vocab-ledger/actions/workflows/tests.yml/badge.svg)
 
-> AI 批改完你的英语作业，顺手把不会的词写进一个本地 JSON；
+> AI 批改完你的英语作业（作文、翻译、听写、完形、阅读都算），顺手把不会的词写进一个本地 JSON；
 > 之后你在浏览器里一张张背，点两个按钮就能处理掉。
 >
 > 不需要账号，不联网，数据在你自己硬盘上。
@@ -99,7 +99,7 @@ data/words.json     唯一数据源：纯文本、可手改、可 diff、自动�
 | 视图 | 内容 | 特点 |
 |---|---|---|
 | **背词** | 待背的词 | **遮挡**：只显示单词和音标，点卡片揭晓释义、搭配、例句、错因；打印时自动展开 |
-| **表一 · 本周新增** | 本周 `first_seen` 的词 | 带「当初为什么记它」 |
+| **表一 · 本周新增** | 本周 `first_seen` 的词 | 带「当初为什么记它」，顶部有错因分布（拼写 / 搭配 / 词义 / 语法 / 眼生） |
 | **表二 · 不会的词库** | 全部还没背的词 | 带标签和记录日期，可搜索 |
 | **收藏夹** | ★ 过的词 | 标着「斩了 / 还没背」 |
 | **斩词** | 已斩的词 | 按「斩于」倒序 |
@@ -117,7 +117,7 @@ data/words.json     唯一数据源：纯文本、可手改、可 diff、自动�
 ```bash
 # 录入
 python vocab.py add --file seed/week47.json          # 批量（幂等，重复导入不会重复记）
-python vocab.py add resilient --zh 有韧性的 --tag 写作搭配 --note "写成 resistent"
+python vocab.py add resilient --zh 有韧性的 --tag 写作搭配 --kind 拼写 --note "写成 resistent"
 
 # 处理
 python vocab.py learn resilient     # 斩（别名 kill）

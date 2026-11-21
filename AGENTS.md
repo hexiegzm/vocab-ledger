@@ -6,7 +6,7 @@
 
 ---
 
-## 四条硬规则
+## 硬规则
 
 ### 1. 批改完必须落库
 
@@ -26,7 +26,23 @@ python vocab.py add "mitigate" --zh "缓解；减轻" --pos v. \
 python vocab.py add --file seed/week47.json
 ```
 
-### 2. `note` 必须写到「具体错在哪」
+### 2. 同时标注 `kind`（错因类型）
+
+```bash
+python vocab.py add "give" --zh "给" --kind 语法 --note "应为 given（过去分词）"
+```
+
+固定用这五个值，周报的「错因分布」靠它统计：
+
+| kind | 什么时候用 |
+|---|---|
+| `拼写` | 听写、默写里写错的词形 |
+| `搭配` | 介词、固定搭配用错（`contribution for` → `to`） |
+| `词义` | 完形/阅读里把意思理解错了 |
+| `语法` | 时态、单复数、词形变化错 |
+| `眼生` | 就是没见过，谈不上错 |
+
+### 3. `note` 必须写到「具体错在哪」
 
 这是账本里唯一会增值的字段。
 
@@ -35,7 +51,7 @@ python vocab.py add --file seed/week47.json
 - ✅ `「稳步推进」整段没译出来`
 - ❌ `错了`、`不熟`、`有错误`、`需要注意`
 
-### 3. 用户说「会了 / 斩了」，才 `learn`
+### 4. 用户说「会了 / 斩了」，才 `learn`
 
 ```bash
 python vocab.py learn mitigate nuance     # 别名：kill
@@ -44,7 +60,7 @@ python vocab.py unlearn mitigate          # 用户说又忘了
 
 **不要替用户判定「他应该会了」。** 只有他明确说背完、会了、斩了，才标 `learned`。你擅自标记，等于把他的清单删空。
 
-### 4. 用户说「收藏」，才 `star`
+### 5. 用户说「收藏」，才 `star`
 
 ```bash
 python vocab.py star mitigate nuance      # 进收藏夹
@@ -53,7 +69,7 @@ python vocab.py unstar mitigate
 
 收藏 ≠ 斩。收藏是「这个写作时能用，我想留着」，斩是「背过了」。**斩掉的词收藏后仍在收藏夹里**——这正是它的用途。
 
-### 5. 不要编音标
+### 6. 不要编音标
 
 没把握就把 `--phonetic` 留空。写错的音标比没有更糟——他会照着错音背。
 

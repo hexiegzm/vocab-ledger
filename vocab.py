@@ -188,6 +188,7 @@ def load() -> dict:
         w.setdefault("learned", False)
         w.setdefault("learned_at", None)
         w.setdefault("starred", False)
+        w.setdefault("kind", "")
     return migrate(data)
 
 
@@ -236,10 +237,13 @@ def upsert(data: dict, rec: dict) -> tuple[dict, bool]:
             "learned": False,
             "learned_at": None,
             "starred": False,
+            "kind": "",
         }
         data["words"].append(existing)
 
     w = existing
+    if rec.get("kind") and not w.get("kind"):
+        w["kind"] = str(rec["kind"]).strip()
     for field in ("phonetic", "pos", "zh", "example"):
         if not w.get(field) and rec.get(field):
             w[field] = rec[field]
@@ -285,6 +289,7 @@ def cmd_add(args) -> int:
             "tags": args.tag,
             "source": args.source,
             "note": args.note,
+            "kind": args.kind,
             "first_seen": args.date,
         })
     if not records:
@@ -516,6 +521,9 @@ a.stat:hover{border-color:var(--accent)}
 .panel.on{display:block}
 .panel h2{margin-top:6px}
 .badge{font-size:11px; padding:2px 8px; border-radius:99px}
+.kind{background:var(--accent-soft); color:var(--accent); border-radius:4px; padding:1px 6px; font-size:10.5px}
+.dist{margin:-6px 0 16px}
+.dist .chip{font-size:12px}
 .answer{display:none}
 .card.reveal .answer{display:block}
 @media print{.answer{display:block}}
@@ -622,6 +630,21 @@ def _wcell(w: dict) -> str:
 def _cell(w: dict, text: str, cls: str = "") -> str:
     c = f' class="{cls}"' if cls else ""
     return f"<td{c}>{text}</td>"
+
+
+def week_ordinal(data: dict, monday: date) -> int:
+    """从账本里最早那个词所在周算第 1 周。"""
+    days = []
+    for w in data["words"]:
+        if w.get("first_seen"):
+            try:
+                days.append(parse_date(w["first_seen"]))
+            except Exception:
+                pass
+    if not days:
+        return 1
+    first = week_monday(min(days))
+    return max(1, (monday - first).days // 7 + 1)
 
 
 def _week_stats(data: dict, monday: date) -> dict:
@@ -758,6 +781,12 @@ filter();
 
 def _word_card(w: dict, interactive: bool, meta: str = "", show_note: bool = True,
                masked: bool = False) -> str:
+    bits = []
+    if w.get("kind"):
+        bits.append(f'<span class="kind">{esc(w["kind"])}</span>')
+    if meta:
+        bits.append(esc(meta))
+    meta_html = f'<div class="revmeta">{" · ".join(bits)}</div>' if bits else ""
     collocs = "".join(f"<li>{esc(c)}</li>" for c in (w.get("collocations") or []) if c)
     star = ' class="act star on"' if w.get("starred") else ' class="act star"'
     kill = ' class="act kill on"' if w.get("learned") else ' class="act kill"'
@@ -778,7 +807,7 @@ def _word_card(w: dict, interactive: bool, meta: str = "", show_note: bool = Tru
         dataset = ""
     return (
         f'<article class="card"{dataset}>'
-        + (f'<div class="revmeta">{esc(meta)}</div>' if meta else "")
+        + meta_html
         + '<div class="card-head">'
         f'<span class="w">{esc(w["word"])}</span>'
         + (f'<span class="ph">{esc(w["phonetic"])}</span>' if w.get("phonetic") else "")
@@ -800,7 +829,7 @@ def render_app(data: dict, monday: date, max_review: int = 60,
     """一页 HTML，五个可切换的视图，全部用卡片。"""
     sunday = monday + timedelta(days=6)
     wk = week_key(monday)
-    wnum = wk.split("-W")[1]
+    wnum = week_ordinal(data, monday)
     words = data["words"]
     st = _week_stats(data, monday)
     open_words = st["open_words"]
@@ -864,8 +893,8 @@ def render_app(data: dict, monday: date, max_review: int = 60,
         h.append(f'<div class="meta">{st["total"]} 词 · 点击按钮直接写入 data/words.json · '
                  f'只监听 127.0.0.1 · 服务版本 {BUILD}</div>')
     else:
-        h.append(f"<h1>第 {int(wnum)} 周 · 生词报告</h1>")
-        h.append(f'<div class="meta">{monday.isoformat()} — {sunday.isoformat()} · {wk} · 生成于 {now_iso()}</div>')
+        h.append(f"<h1>第 {wnum} 周 · 生词报告</h1>")
+        h.append(f'<div class="meta">{monday.isoformat()} — {sunday.isoformat()} · 生成于 {now_iso()}</div>')
     h.append("</header>")
 
     h.append('<div class="topbar no-print">')
@@ -887,6 +916,16 @@ def render_app(data: dict, monday: date, max_review: int = 60,
         on = " on" if i == 0 else ""
         h.append(f'<section class="panel{on}" id="p-{key}" data-panel="{key}">')
         h.append(f'<h2>{label}<span class="count">{count} 词</span></h2>')
+        if key == "t1":
+            dist = {}
+            for w in st["week_words"]:
+                k = (w.get("kind") or "").strip() or "未标注"
+                dist[k] = dist.get(k, 0) + 1
+            if dist:
+                h.append('<div class="chips dist">' + "".join(
+                    f'<span class="chip">{esc(k)} <b>{v}</b></span>'
+                    for k, v in sorted(dist.items(), key=lambda kv: -kv[1])
+                ) + "</div>")
         if key == "study":
             h.append('<p class="hint">先看词，心里过一遍意思，再点卡片揭晓。'
                      '要看全部索引（带标签和日期）去「表二」。</p>')
@@ -1309,6 +1348,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--tag", action="append", default=[], help="主题标签，可重复")
     a.add_argument("--source", default="", help="来源说明")
     a.add_argument("--note", default="", help="当初为什么记它（错因）")
+    a.add_argument("--kind", default="", help="错因类型：拼写 / 搭配 / 词义 / 语法 / 眼生")
     a.add_argument("--date", default="", help="录入日期 YYYY-MM-DD")
     a.set_defaults(func=cmd_add)
 
