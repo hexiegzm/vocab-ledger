@@ -497,13 +497,22 @@ a.stat{text-decoration:none; color:inherit; display:block; transition:border-col
 a.stat:hover{border-color:var(--accent)}
 .sec{border:1px solid var(--line); border-radius:10px; padding:4px 18px 16px; background:#fffefa; margin:0 0 16px; scroll-margin-top:18px}
 .sec h2{margin:14px 0 10px}
-.pnav{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 18px; padding-bottom:12px; border-bottom:1px solid var(--line)}
-.pnav a{font-size:12.5px; text-decoration:none; color:#3f3a33; border:1px solid var(--line);
-  border-radius:99px; padding:7px 13px; background:#fffefa}
-.pnav a b{color:var(--accent); margin-left:5px; font-weight:600}
-.pnav a:hover{border-color:var(--accent); color:var(--accent)}
-.pnav a.on{background:var(--accent); border-color:var(--accent); color:#fff}
-.pnav a.on b{color:#fff}
+.topbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 18px;
+  padding-bottom:12px; border-bottom:1px solid var(--line)}
+.tabbar{display:flex; gap:8px; flex-wrap:wrap}
+.tab{font-size:12.5px; text-decoration:none; color:#3f3a33; border:1px solid var(--line);
+  border-radius:99px; padding:7px 13px; background:#fffefa; cursor:pointer; user-select:none}
+.tab b{color:var(--accent); margin-left:5px; font-weight:600}
+.tab:hover{border-color:var(--accent); color:var(--accent)}
+.tab.on{background:var(--accent); border-color:var(--accent); color:#fff}
+.tab.on b{color:#fff}
+.topbar .search{flex:1; min-width:200px}
+.panel{display:none}
+.panel.on{display:block}
+.panel h2{margin-top:6px}
+.badge{font-size:11px; padding:2px 8px; border-radius:99px}
+.badge.star{background:#fdf3dd; color:#8a5a00; border:1px solid #e3c27a}
+.badge.killed{background:var(--accent-soft); color:var(--accent); border:1px solid #cfe0d6}
 .stat .n{font-size:24px; font-weight:700; color:var(--accent); line-height:1.2}
 .stat .l{font-size:11.5px; color:var(--muted); letter-spacing:.04em}
 h2{font-size:17px; margin:34px 0 12px; padding-left:10px; border-left:4px solid var(--accent); line-height:1.35}
@@ -519,7 +528,7 @@ td.w{font-family:Georgia,"Cambria",serif; font-size:16px; font-weight:600}
 .group-head .t{font-size:14.5px; font-weight:700; color:var(--accent)}
 .group-head .c{font-size:11.5px; color:var(--muted)}
 .cards{display:grid; grid-template-columns:1fr 1fr; gap:12px}
-.card{border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:#fffefa; break-inside:avoid}
+.card{position:relative; border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:#fffefa; break-inside:avoid}
 .card-head{display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:4px}
 .card-head .w{font-family:Georgia,"Cambria",serif; font-size:19px; font-weight:700; letter-spacing:.01em}
 .card-head .ph{font-size:12px; color:var(--muted); font-family:"Charis SIL","Gentium Plus","Lucida Sans Unicode","Segoe UI","Microsoft YaHei",sans-serif}
@@ -558,6 +567,15 @@ footer{margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font
   border:1px solid var(--accent); background:var(--accent); color:#fff; box-shadow:0 3px 10px rgba(0,0,0,.15)
 }
 .empty{color:var(--muted); font-size:13px; padding:10px 0}
+.acts{position:absolute; right:12px; top:12px; display:flex; gap:6px}
+.act{font:inherit; font-size:12px; line-height:1; padding:7px 10px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--line); background:#fff; color:#6f6a63; min-width:34px}
+.act:hover{border-color:#c9c2b4}
+.act.star.on{background:#fdf3dd; border-color:#e3c27a; color:#8a5a00}
+.act.kill.on{background:var(--accent-soft); border-color:#cfe0d6; color:var(--accent)}
+.card{transition:opacity .18s, transform .18s}
+.card.leaving{opacity:0; transform:scale(.97)}
+
 @media print{
   body{background:#fff; padding:0; font-size:11.5pt}
   .page{max-width:none; border:0; box-shadow:none; padding:0; border-radius:0}
@@ -566,7 +584,9 @@ footer{margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font
   h2{break-after:avoid}
   .card{break-inside:avoid}
   .sec{border:0; padding:0; margin:0 0 12px}
-  .totop{display:none}
+  .topbar{display:none}
+  .panel{display:none}
+  .panel.on{display:block}
   @page{size:A4; margin:15mm 14mm}
 }
 @media (max-width:640px){
@@ -589,14 +609,6 @@ def _wcell(w: dict) -> str:
 def _cell(w: dict, text: str, cls: str = "") -> str:
     c = f' class="{cls}"' if cls else ""
     return f"<td{c}>{text}</td>"
-
-
-PAGES = (
-    ("main", "表一 · 本周新增", "表一"),
-    ("t2", "表二 · 不会的词库", "表二"),
-    ("fav", "收藏夹", "收藏夹"),
-    ("kill", "斩词", "斩词"),
-)
 
 
 def _week_stats(data: dict, monday: date) -> dict:
@@ -626,160 +638,222 @@ def _week_stats(data: dict, monday: date) -> dict:
     }
 
 
-def _nav(stem: str, active: str, st: dict) -> str:
-    counts = {
-        "main": len(st["week_words"]),
-        "t2": len(st["open_words"]),
-        "fav": len(st["starred"]),
-        "kill": st["killed_total"],
-    }
-    out = ['<nav class="pnav">']
-    for suffix, _title, label in PAGES:
-        href = f"{stem}.html" if suffix == "main" else f"{stem}-{suffix}.html"
-        cls = ' class="on"' if suffix == active else ""
-        out.append(f'<a href="{href}"{cls}>{label}<b>{counts[suffix]}</b></a>')
-    out.append("</nav>")
-    return "".join(out)
+PANELS = (
+    ("study", "背词"),
+    ("t1", "表一 · 本周新增"),
+    ("t2", "表二 · 不会的词库"),
+    ("fav", "收藏夹"),
+    ("kill", "斩词"),
+)
+
+APP_JS = r"""
+let tab = 'study';
+function panels(){ return document.querySelectorAll('.panel'); }
+function show(name){
+  tab = name;
+  panels().forEach(p => p.classList.toggle('on', p.dataset.panel === name));
+  document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.panel === name));
+  filter();
+}
+function filter(){
+  const q = (document.getElementById('q').value || '').trim().toLowerCase();
+  document.querySelectorAll('.panel.on .card').forEach(c => {
+    c.style.display = (!q || c.textContent.toLowerCase().indexOf(q) > -1) ? '' : 'none';
+  });
+}
+async function act(card, field){
+  const value = card.dataset[field] !== '1';
+  const body = { word: card.dataset.word, field: field === 'star' ? 'star' : 'learn', value: value };
+  try {
+    const r = await fetch('/api/mark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+  } catch (e) { alert('写入失败：' + e.message); return; }
+  const key = field === 'star' ? 'star' : 'learn';
+  card.dataset[key] = value ? '1' : '0';
+  const btn = card.querySelector('.act.' + field);
+  if (btn) {
+    btn.classList.toggle('on', value);
+    btn.textContent = field === 'star' ? (value ? '★' : '☆') : (value ? '斩了' : '斩');
+  }
+  card.classList.add('leaving');
+  setTimeout(() => { card.classList.remove('leaving'); recount(); filter(); }, 180);
+}
+function recount(){
+  const all = [...document.querySelectorAll('.card')];
+  const uniq = new Map();
+  all.forEach(c => uniq.set(c.dataset.word, c));
+  const vals = [...uniq.values()];
+  const open = vals.filter(c => c.dataset.learn === '0').length;
+  const star = vals.filter(c => c.dataset.star === '1').length;
+  const kill = vals.filter(c => c.dataset.learn === '1').length;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('n-study', open); set('n-t2', open); set('n-fav', star); set('n-kill', kill);
+}
+document.querySelectorAll('.tabbar a').forEach(a => {
+  a.addEventListener('click', () => show(a.dataset.panel));
+});
+document.querySelectorAll('.act').forEach(b => {
+  b.addEventListener('click', e => { e.stopPropagation(); act(b.closest('.card'), b.dataset.act); });
+});
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === '1' || e.key === '2') {
+    const card = document.querySelector('.panel.on .card');
+    if (card) { e.preventDefault(); act(card, e.key === '1' ? 'star' : 'kill'); }
+  }
+});
+"""
 
 
-def _table(words: list, with_note: bool = False, with_tag: bool = False,
-           with_status: bool = False, date_key: str = "first_seen") -> str:
-    heads = ['<th style="width:18%">单词</th>', '<th style="width:14%">音标</th>',
-             '<th style="width:22%">释义</th>', '<th style="width:26%">搭配</th>']
-    if with_note:
-        heads.append('<th style="width:12%">为什么记它</th>')
-    if with_tag:
-        heads.append('<th style="width:8%">标签</th>')
-    if with_status:
-        heads.append('<th style="width:8%">状态</th>')
-    heads.append(f'<th style="width:10%">{"斩于" if date_key == "learned_at" else "日期"}</th>')
-    rows = []
-    for w in words:
-        cells = [_wcell(w),
-                 _cell(w, esc(w.get("phonetic") or ""), "ph"),
-                 _cell(w, esc(w.get("zh") or "—")),
-                 _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")]
-        if with_note:
-            cells.append(_cell(w, esc(w.get("note") or "—"), "err-bad small"))
-        if with_tag:
-            cells.append(_cell(w, esc((w.get("tags") or ["未分类"])[0]), "tagcell"))
-        if with_status:
-            cells.append(_cell(w, "斩了" if w.get("learned") else "还没背", "tagcell"))
-        cells.append(_cell(w, esc(w.get(date_key) or ""), "small date"))
-        rows.append("<tr>" + "".join(cells) + "</tr>")
-    return ('<table class="grid"><thead><tr>' + "".join(heads) + "</tr></thead><tbody>"
-            + "".join(rows) + "</tbody></table>")
+def _word_card(w: dict, interactive: bool, meta: str = "", show_note: bool = True) -> str:
+    collocs = "".join(f"<li>{esc(c)}</li>" for c in (w.get("collocations") or []) if c)
+    star = ' class="act star on"' if w.get("starred") else ' class="act star"'
+    kill = ' class="act kill on"' if w.get("learned") else ' class="act kill"'
+    if interactive:
+        acts = (f'<div class="acts">'
+                f'<button{star} data-act="star">{"★" if w.get("starred") else "☆"}</button>'
+                f'<button{kill} data-act="kill">{"斩了" if w.get("learned") else "斩"}</button>'
+                f'</div>')
+        dataset = (f' data-word="{esc(w["word"])}" data-learn="{1 if w.get("learned") else 0}" '
+                   f'data-star="{1 if w.get("starred") else 0}"')
+    else:
+        badge = []
+        if w.get("starred"):
+            badge.append('<span class="badge star">★</span>')
+        if w.get("learned"):
+            badge.append('<span class="badge killed">已斩</span>')
+        acts = f'<div class="acts">{"".join(badge)}</div>' if badge else ""
+        dataset = ""
+    return (
+        f'<article class="card"{dataset}>'
+        f'{acts}'
+        + (f'<div class="revmeta">{esc(meta)}</div>' if meta else "")
+        + '<div class="card-head">'
+        f'<span class="w">{esc(w["word"])}</span>'
+        + (f'<span class="ph">{esc(w["phonetic"])}</span>' if w.get("phonetic") else "")
+        + (f'<span class="pos">{esc(w["pos"])}</span>' if w.get("pos") else "")
+        + "</div>"
+        + (f'<div class="zh">{esc(w["zh"])}</div>' if w.get("zh") else "")
+        + (f'<ul class="colloc">{collocs}</ul>' if collocs else "")
+        + (f'<div class="eg">{esc(w["example"])}</div>' if w.get("example") else "")
+        + (f'<div class="myerr">当初为什么记它：{esc(w["note"])}</div>' if show_note and w.get("note") else "")
+        + "</article>"
+    )
 
 
-def render_page(data: dict, monday: date, page: str, stem: str,
-                max_review: int = 60, title: str | None = None) -> str:
+def render_app(data: dict, monday: date, max_review: int = 60,
+               title: str | None = None, interactive: bool = False) -> str:
+    """一页 HTML，五个可切换的视图，全部用卡片。"""
     sunday = monday + timedelta(days=6)
     wk = week_key(monday)
     wnum = wk.split("-W")[1]
+    words = data["words"]
     st = _week_stats(data, monday)
-    page_title = {p[0]: p[1] for p in PAGES}[page]
+    open_words = st["open_words"]
+    shown = open_words[:max_review]
 
-    body: list[str] = []
-    if page == "main":
-        body.append(f'<h2>表一 · 本周新增 <span class="count">{len(st["week_words"])} 词</span></h2>')
-        body.append('<p class="hint">只装这一周记下来的词，是本周要背的全部内容。</p>')
-        if st["week_words"]:
-            body.append(_table(st["week_words"], with_note=True))
-        else:
-            body.append(f'<div class="empty">这周没有新记的词。<a href="{stem}-t2.html">去表二看看积压的</a>。</div>')
-    elif page == "t2":
-        shown = st["open_words"][:max_review]
-        count_txt = (f"{len(shown)} / {len(st['open_words'])} 词（超出上限未列出）"
-                     if len(st["open_words"]) > len(shown) else f"{len(st['open_words'])} 词")
-        body.append(f'<h2>表二 · 不会的词库 <span class="count">{count_txt}</span></h2>')
-        body.append('<p class="hint">全部还没背的词，按主题分组、组内字母序。背完一个就说一句「XX 会了」，它会从这里消失。</p>')
-        if shown:
-            search_js = (
-                "var v=this.value.toLowerCase();"
-                "document.querySelectorAll('#lib tbody tr').forEach(function(r){"
-                "r.style.display=r.textContent.toLowerCase().indexOf(v)>-1?'':'none'});"
-            )
-            body.append('<div class="no-print" style="margin:-6px 0 10px">'
-                        '<input class="search" id="q" type="search" '
-                        'placeholder="在词库里搜单词或释义…" '
-                        f'oninput="{search_js}">'
-                        "</div>")
-            body.append(_table(shown, with_tag=True).replace(
-                '<table class="grid">', '<table class="grid" id="lib">', 1))
-        else:
-            body.append('<div class="empty">词库里没有待背的词，干净了。</div>')
-        if len(st["open_words"]) > len(shown):
-            body.append(f'<p class="hint">另有 {len(st["open_words"]) - len(shown)} 个词未列入本期'
-                        f'（上限 {max_review}），可用 <code>vocab.py list</code> 查看。</p>')
-    elif page == "fav":
-        body.append(f'<h2>收藏夹 <span class="count">{len(st["starred"])} 词</span></h2>')
-        body.append('<p class="hint">★ 是你特意留下的词，斩掉之后仍然在这里。写作文前扫一眼。</p>')
-        if st["starred"]:
-            body.append(_table(st["starred"], with_status=True))
-        else:
-            body.append('<div class="empty">还没有收藏的词。背的时候觉得「这个写作能用」，说一句「收藏 XX」就行。</div>')
-    else:
-        body.append(f'<h2>斩词 <span class="count">本周 {len(st["learned_week"])} 词 · '
-                    f'累计 {st["killed_total"]} 词</span></h2>')
-        body.append('<p class="hint">已经背过、从表二移走的词，按斩掉时间倒序。</p>')
-        if st["learned_week"]:
-            body.append('<div class="chips" style="margin-bottom:16px">')
-            for w in st["learned_week"]:
-                body.append(f'<span class="chip"><span class="s">{esc(w["word"])}</span> '
-                            f'{esc(w.get("zh") or "")}</span>')
-            body.append("</div>")
-        if st["killed_all"]:
-            body.append(_table(st["killed_all"], with_tag=True, date_key="learned_at"))
-        else:
-            body.append('<div class="empty">还没斩过词。背完说一句「XX 斩了」，它就从表二消失。</div>')
+    def cards(items, meta_fn, note=True):
+        return "".join(_word_card(w, interactive, meta_fn(w), note) for w in items)
+
+    panels = []
+
+    # 背词：去噪的学习视图（词 / 音标 / 释义 / 搭配 / 例句 / 错因）
+    panels.append((
+        "study",
+        "背词",
+        len(open_words),
+        cards(shown, lambda w: "", note=True) or
+        '<div class="empty">没有待背的词。去<a href="#" onclick="show(\'kill\');return false">斩词</a>看看斩过什么。</div>',
+    ))
+    panels.append((
+        "t1",
+        "表一 · 本周新增",
+        len(st["week_words"]),
+        cards(st["week_words"], lambda w: (w.get("tags") or ["未分类"])[0] + " · " + (w.get("first_seen") or "")) or
+        '<div class="empty">这周没有新记的词。</div>',
+    ))
+    panels.append((
+        "t2",
+        "表二 · 不会的词库",
+        len(open_words),
+        cards(shown, lambda w: (w.get("tags") or ["未分类"])[0] + " · " + (w.get("first_seen") or ""), note=False) or
+        '<div class="empty">词库里没有待背的词，干净了。</div>',
+    ))
+    panels.append((
+        "fav",
+        "收藏夹",
+        len(st["starred"]),
+        cards(st["starred"], lambda w: ("斩了" if w.get("learned") else "还没背") + " · " + (w.get("first_seen") or "")) or
+        '<div class="empty">还没有收藏的词。背的时候觉得「这个写作能用」，说一句「收藏 XX」就行。</div>',
+    ))
+    panels.append((
+        "kill",
+        "斩词",
+        st["killed_total"],
+        cards(st["killed_all"], lambda w: "斩于 " + (w.get("learned_at") or "")) or
+        '<div class="empty">还没斩过词。背完说一句「XX 斩了」，它就从表二消失。</div>',
+    ))
 
     h = []
     h.append("<!DOCTYPE html>")
     h.append('<html lang="zh-CN"><head><meta charset="utf-8">')
     h.append('<meta name="viewport" content="width=device-width,initial-scale=1">')
-    h.append(f"<title>{esc(title or f'第 {int(wnum)} 周 · {page_title}')}</title>")
-    h.append(f"<style>{CSS}</style></head><body>")
+    h.append(f"<title>{esc(title or ('背词 · vocab-ledger' if interactive else f'第 {int(wnum)} 周 生词报告'))}</title>")
+    h.append(f"<style>{CSS}</style></head><body class=\"app\">")
     h.append('<div class="toolbar no-print"><button onclick="window.print()">打印 / 存为 PDF</button></div>')
     h.append('<div class="page">')
+
     h.append("<header>")
     h.append('<div class="kicker">English Vocabulary · Weekly</div>')
-    h.append(f"<h1>第 {int(wnum)} 周 · {page_title}</h1>")
-    h.append(f'<div class="meta">{monday.isoformat()} — {sunday.isoformat()} · {wk} · 生成于 {now_iso()}</div>')
+    if interactive:
+        h.append("<h1>背词</h1>")
+        h.append(f'<div class="meta">{st["total"]} 词 · 点击按钮直接写入 data/words.json · 只监听 127.0.0.1</div>')
+    else:
+        h.append(f"<h1>第 {int(wnum)} 周 · 生词报告</h1>")
+        h.append(f'<div class="meta">{monday.isoformat()} — {sunday.isoformat()} · {wk} · 生成于 {now_iso()}</div>')
     h.append("</header>")
-    h.append(_nav(stem, page, st))
-    h.append('<section class="sec">')
-    h.extend(body)
-    h.append("</section>")
-    h.append(f'<footer>由 <code>vocab.py</code> 生成 · 数据源 data/words.json · 共 {st["total"]} 词 · '
-             f'下期自动生成于每周日 20:00</footer>')
-    h.append("</div></body></html>")
+
+    h.append('<div class="topbar no-print">')
+    h.append('<nav class="tabbar">')
+    for i, (key, label, count, _body) in enumerate(panels):
+        on = " on" if i == 0 else ""
+        h.append(f'<a data-panel="{key}" class="tab{on}">{label}<b id="n-{key}">{count}</b></a>')
+    h.append("</nav>")
+    h.append('<input id="q" class="search" type="search" placeholder="搜单词或释义…" oninput="filter()">')
+    h.append("</div>")
+
+    for i, (key, label, count, body) in enumerate(panels):
+        on = " on" if i == 0 else ""
+        h.append(f'<section class="panel{on}" id="p-{key}" data-panel="{key}">')
+        h.append(f'<h2>{label}<span class="count">{count} 词</span></h2>')
+        h.append('<div class="cards">')
+        h.append(body)
+        h.append("</div></section>")
+
+    h.append('<footer>由 <code>vocab.py</code> 生成 · 数据源 data/words.json · '
+             f'共 {st["total"]} 词 · 下期自动生成于每周日 20:00</footer>')
+    h.append("</div>")
+    h.append(f"<script>{APP_JS}</script>")
+    h.append("</body></html>")
     return "\n".join(h)
 
 
 def render_html(data: dict, monday: date, max_review: int = 60, title: str | None = None) -> str:
-    """兼容入口：只返回「表一」那一页。"""
-    return render_page(data, monday, "main", f"vocab-{week_key(monday)}", max_review, title)
-
-
-def render_pages(data: dict, monday: date, stem: str,
-                 max_review: int = 60, title: str | None = None) -> dict[str, str]:
-    return {page: render_page(data, monday, page, stem, max_review, title)
-            for page, _t, _l in PAGES}
+    return render_app(data, monday, max_review, title, interactive=False)
 
 
 def write_report(data: dict, monday: date, out: Path, max_review: int = 60,
                  title: str | None = None) -> Path:
-    """落盘一周的四个页面（表一/表二/收藏夹/斩词），返回表一那一页的路径。"""
+    """渲染并落盘一份周报（单文件 HTML，内含五个可切换视图）。"""
     out = Path(out)
-    if out.suffix.lower() not in (".html", ".htm"):
-        out = out.with_suffix(".html")
-    stem = out.with_suffix("").name
-    pages = render_pages(data, monday, stem, max_review, title)
+    doc = render_app(data, monday, max_review, title, interactive=False)
     out.parent.mkdir(parents=True, exist_ok=True)
-    for page, doc in pages.items():
-        target = out if page == "main" else out.with_name(f"{stem}-{page}{out.suffix}")
-        target.write_text(doc, encoding="utf-8")
-    log(f"report: {out} week={week_key(monday)} words={len(data['words'])} pages={len(pages)}")
+    out.write_text(doc, encoding="utf-8")
+    log(f"report: {out} week={week_key(monday)} words={len(data['words'])}")
 
     heartbeat = LOG_DIR / "last-report.json"
     previous = None
@@ -1022,189 +1096,6 @@ def cmd_doctor(args) -> int:
 
 # ---------------------------------------------------------------- 命令：review（本地背词页）
 
-REVIEW_CSS = """
-body.review{background:#f2efe7; padding:26px 18px 90px; font-size:15px}
-.rev-wrap{max-width:1080px; margin:0 auto}
-.rev-head{display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap; margin-bottom:16px}
-.rev-head h1{font-size:26px; margin:2px 0 0}
-.rev-head .meta{font-size:12px; color:var(--muted)}
-.tabs{display:flex; gap:8px; margin-left:auto; flex-wrap:wrap}
-.tabs button{
-  font:inherit; font-size:13.5px; padding:8px 14px; border-radius:99px; cursor:pointer;
-  border:1px solid var(--line); background:#fffefa; color:#3f3a33;
-}
-.tabs button b{font-weight:600; margin-left:4px; color:var(--accent)}
-.tabs button.on{background:var(--accent); border-color:var(--accent); color:#fff}
-.tabs button.on b{color:#fff}
-.rev-bar{display:flex; gap:10px; align-items:center; margin:0 0 22px}
-.rev-bar .search{flex:1}
-.rev-bar .hint{font-size:12px; color:var(--muted); white-space:nowrap}
-.cards.rev{grid-template-columns:1fr 1fr; gap:14px}
-.card.rev{position:relative; padding:16px 18px 14px; transition:opacity .18s, transform .18s}
-.card.rev.active{outline:2px solid var(--accent); outline-offset:2px}
-.card.rev.leaving{opacity:0; transform:scale(.97)}
-.acts{position:absolute; right:12px; top:12px; display:flex; gap:6px}
-.act{
-  font:inherit; font-size:12px; line-height:1; padding:7px 10px; border-radius:8px; cursor:pointer;
-  border:1px solid var(--line); background:#fff; color:#6f6a63; min-width:34px;
-}
-.act:hover{border-color:#c9c2b4}
-.act.star.on{background:#fdf3dd; border-color:#e3c27a; color:#8a5a00}
-.act.kill.on{background:var(--accent-soft); border-color:#cfe0d6; color:var(--accent)}
-.card .revmeta{font-size:11.5px; color:var(--muted); margin-bottom:6px}
-.card .w{font-size:22px}
-.empty-rev{color:var(--muted); font-size:14px; padding:30px 4px}
-"""
-
-REVIEW_JS = r"""
-const cnt = {
-  open: document.getElementById('cnt-open'),
-  star: document.getElementById('cnt-star'),
-  kill: document.getElementById('cnt-kill'),
-};
-let tab = 'open';
-
-function cards(){ return [...document.querySelectorAll('.card.rev')]; }
-
-function recount(){
-  const all = cards();
-  cnt.open.textContent = all.filter(c => c.dataset.learn === '0').length;
-  cnt.star.textContent = all.filter(c => c.dataset.star === '1').length;
-  cnt.kill.textContent = all.filter(c => c.dataset.learn === '1').length;
-}
-
-function match(card){
-  if (tab === 'open' && card.dataset.learn !== '0') return false;
-  if (tab === 'starred' && card.dataset.star !== '1') return false;
-  if (tab === 'learned' && card.dataset.learn !== '1') return false;
-  const q = document.getElementById('q').value.trim().toLowerCase();
-  if (q && !card.textContent.toLowerCase().includes(q)) return false;
-  return true;
-}
-
-function apply(){
-  const all = cards();
-  let first = null;
-  all.forEach(c => {
-    const ok = match(c);
-    c.style.display = ok ? '' : 'none';
-    c.classList.remove('active');
-    if (ok && !first) first = c;
-  });
-  if (first) first.classList.add('active');
-  document.getElementById('empty').style.display = all.some(match) ? 'none' : '';
-}
-
-async function act(card, field){
-  const value = card.dataset[field] !== '1';
-  const body = { word: card.dataset.word, field: field === 'star' ? 'star' : 'learn', value: value };
-  try {
-    const r = await fetch('/api/mark', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-  } catch (e) {
-    alert('写入失败：' + e.message);
-    return;
-  }
-  const key = field === 'star' ? 'star' : 'learn';
-  card.dataset[key] = value ? '1' : '0';
-  const btn = card.querySelector('.act.' + field);
-  btn.classList.toggle('on', value);
-  btn.textContent = field === 'star' ? (value ? '★' : '☆') : (value ? '斩了' : '斩');
-  card.classList.add('leaving');
-  setTimeout(() => { card.classList.remove('leaving'); recount(); apply(); }, 180);
-}
-
-document.querySelectorAll('.act').forEach(b => {
-  b.addEventListener('click', e => { e.stopPropagation(); act(b.closest('.card'), b.dataset.act); });
-});
-document.querySelectorAll('.tabs button').forEach(b => {
-  b.addEventListener('click', () => {
-    tab = b.dataset.tab;
-    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
-    apply();
-  });
-});
-document.getElementById('q').addEventListener('input', apply);
-document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;
-  const active = document.querySelector('.card.rev.active') || cards().find(c => match(c));
-  if (!active) return;
-  if (e.key === '1') { e.preventDefault(); act(active, 'star'); }
-  if (e.key === '2') { e.preventDefault(); act(active, 'kill'); }
-});
-recount();
-apply();
-"""
-
-
-def render_review_page(data: dict) -> str:
-    words = data["words"]
-    ordered = sorted(
-        words,
-        key=lambda w: (1 if w.get("learned") else 0, 0 if w.get("starred") else 1,
-                       w.get("first_seen") or "", w["word"].lower()),
-    )
-    cards_html = []
-    for w in ordered:
-        collocs = "".join(f"<li>{esc(c)}</li>" for c in (w.get("collocations") or []) if c)
-        cards_html.append(
-            f'<article class="card rev" data-word="{esc(w["word"])}" '
-            f'data-learn="{1 if w.get("learned") else 0}" data-star="{1 if w.get("starred") else 0}">'
-            f'<div class="acts">'
-            f'<button class="act star{" on" if w.get("starred") else ""}" data-act="star">'
-            f'{"★" if w.get("starred") else "☆"}</button>'
-            f'<button class="act kill{" on" if w.get("learned") else ""}" data-act="kill">'
-            f'{"斩了" if w.get("learned") else "斩"}</button>'
-            f'</div>'
-            f'<div class="revmeta">{esc((w.get("tags") or ["未分类"])[0])} · {esc(w.get("first_seen") or "")}</div>'
-            f'<div class="card-head"><span class="w">{esc(w["word"])}</span>'
-            + (f'<span class="ph">{esc(w["phonetic"])}</span>' if w.get("phonetic") else "")
-            + (f'<span class="pos">{esc(w["pos"])}</span>' if w.get("pos") else "")
-            + "</div>"
-            + (f'<div class="zh">{esc(w["zh"])}</div>' if w.get("zh") else "")
-            + (f'<ul class="colloc">{collocs}</ul>' if collocs else "")
-            + (f'<div class="eg">{esc(w["example"])}</div>' if w.get("example") else "")
-            + (f'<div class="myerr">当初为什么记它：{esc(w["note"])}</div>' if w.get("note") else "")
-            + "</article>"
-        )
-
-    n_open = sum(1 for w in words if not w.get("learned"))
-    n_star = sum(1 for w in words if w.get("starred"))
-    n_kill = sum(1 for w in words if w.get("learned"))
-
-    return "".join([
-        "<!DOCTYPE html>",
-        '<html lang="zh-CN"><head><meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width,initial-scale=1">',
-        "<title>背词 · vocab-ledger</title>",
-        f"<style>{CSS}{REVIEW_CSS}</style></head>",
-        '<body class="review"><div class="rev-wrap">',
-        '<div class="rev-head">',
-        '<div><div class="kicker">vocab-ledger</div><h1>背词</h1>',
-        f'<div class="meta">{len(words)} 词 · 数据写入 data/words.json</div></div>',
-        '<div class="tabs">',
-        f'<button data-tab="open" class="on">待背<b id="cnt-open">{n_open}</b></button>',
-        f'<button data-tab="starred">收藏<b id="cnt-star">{n_star}</b></button>',
-        f'<button data-tab="learned">斩了<b id="cnt-kill">{n_kill}</b></button>',
-        "</div></div>",
-        '<div class="rev-bar">',
-        '<input id="q" class="search" type="search" placeholder="搜单词或释义…">',
-        '<span class="hint">键盘 1=收藏 2=斩 · 只监听 127.0.0.1</span>',
-        "</div>",
-        '<div class="cards rev">',
-        "".join(cards_html),
-        "</div>",
-        '<div class="empty-rev" id="empty" style="display:none">这个分类下没有词。</div>',
-        "</div>",
-        f"<script>{REVIEW_JS}</script>",
-        "</body></html>",
-    ])
-
-
 def cmd_review(args) -> int:
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1237,7 +1128,7 @@ def cmd_review(args) -> int:
             if self.path.split("?")[0] not in ("/", "/index.html"):
                 return self._send(404, b"not found", "text/plain; charset=utf-8")
             with lock:
-                page = render_review_page(load())
+                page = render_app(load(), week_monday(date.today()), interactive=True)
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
         def do_POST(self):
