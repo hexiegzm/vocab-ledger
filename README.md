@@ -2,6 +2,8 @@
 
 ![tests](https://github.com/hexiegzm/vocab-ledger/actions/workflows/tests.yml/badge.svg)
 
+**中文** · [English](README.en.md)
+
 > AI 批改完你的英语作业（作文、翻译、听写、完形、阅读都算），顺手把不会的词写进一个本地 JSON；
 > 之后你在浏览器里一张张背，点两个按钮就能处理掉。
 >
