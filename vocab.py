@@ -1406,7 +1406,19 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     force_utf8()
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except SystemExit:
+        raise
+    except Exception:
+        # pythonw 没有控制台，异常必须落盘，否则什么都看不到
+        import traceback
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(LOG_DIR / "error.log", "a", encoding="utf-8") as f:
+            f.write(f"[{now_iso()}] argv={argv}\n{traceback.format_exc()}\n")
+        if sys.stdout is None:
+            return 1
+        raise
 
 
 if __name__ == "__main__":

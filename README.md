@@ -142,6 +142,8 @@ python vocab.py doctor --task VocabLedgerWeekly   # 自检
 
 `app` 只监听 `127.0.0.1`：点按钮**直接写 `data/words.json`**，同时重新生成当周 HTML。标签页关掉 30 分钟后服务自动退出（`--idle 0` 可关闭）。
 
+**服务只服务于「点按钮」。** AI 记录用的是独立的一次 `add` 调用，周日报告是计划任务跑的，两者都不需要这个服务在跑。Windows 上想彻底没有黑窗口，用 `pythonw.exe` 启动即可。
+
 ## 让 AI 帮你记
 
 这是这个仓库的重点。**它一半是工具，一半是协议。**
