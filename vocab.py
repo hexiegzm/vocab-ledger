@@ -59,6 +59,10 @@ REPORT_DIR = BASE / "reports"
 LOG_DIR = BASE / "logs"
 
 SCHEMA_VERSION = 2
+try:
+    BUILD = datetime.fromtimestamp(Path(__file__).stat().st_mtime).strftime("%m-%d %H:%M")
+except Exception:  # pragma: no cover
+    BUILD = "?"
 MAX_BACKUPS = 40
 STATE_ZH = {"open": "还没背", "learned": "背过了"}
 
@@ -846,7 +850,8 @@ def render_app(data: dict, monday: date, max_review: int = 60,
     h.append('<div class="kicker">English Vocabulary · Weekly</div>')
     if interactive:
         h.append("<h1>背词</h1>")
-        h.append(f'<div class="meta">{st["total"]} 词 · 点击按钮直接写入 data/words.json · 只监听 127.0.0.1</div>')
+        h.append(f'<div class="meta">{st["total"]} 词 · 点击按钮直接写入 data/words.json · '
+                 f'只监听 127.0.0.1 · 服务版本 {BUILD}</div>')
     else:
         h.append(f"<h1>第 {int(wnum)} 周 · 生词报告</h1>")
         h.append(f'<div class="meta">{monday.isoformat()} — {sunday.isoformat()} · {wk} · 生成于 {now_iso()}</div>')
@@ -1170,6 +1175,11 @@ def cmd_review(args) -> int:
             last["t"] = _time.time()
             if not self._guard():
                 return self._send(403, b"forbidden", "text/plain; charset=utf-8")
+            if self.path.split("?")[0] == "/__quit":
+                self._send(200, b"bye", "text/plain; charset=utf-8")
+                import threading as _th
+                _th.Thread(target=self.server.shutdown, daemon=True).start()
+                return
             if self.path.split("?")[0] == "/ping":
                 return self._send(200, b"ok", "text/plain; charset=utf-8")
             if self.path.split("?")[0] not in ("/", "/index.html"):
@@ -1224,6 +1234,14 @@ def cmd_review(args) -> int:
                 return self._send(500, json.dumps({"ok": False, "error": str(exc)}).encode(), "application/json")
 
     port = args.port
+    # 同端口上有旧实例（可能还是旧代码）就让它退出，避免「改了代码界面不变」
+    try:
+        import urllib.request as _rq
+        _rq.urlopen(f"http://127.0.0.1:{port}/__quit", timeout=1.5).read()
+        print(f"检测到 {port} 上有旧实例，已请它退出。")
+        _time.sleep(1.2)
+    except Exception:
+        pass
     for attempt in range(10):
         try:
             server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
