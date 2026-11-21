@@ -530,7 +530,7 @@ td.w{font-family:Georgia,"Cambria",serif; font-size:16px; font-weight:600}
 .group-head .c{font-size:11.5px; color:var(--muted)}
 .cards{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .card{position:relative; border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:#fffefa; break-inside:avoid}
-.card-head{display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:4px; padding-right:150px}
+.card-head{display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
 .card-head .w{font-family:Georgia,"Cambria",serif; font-size:19px; font-weight:700; letter-spacing:.01em}
 .card-head .ph{font-size:12px; color:var(--muted); font-family:"Charis SIL","Gentium Plus","Lucida Sans Unicode","Segoe UI","Microsoft YaHei",sans-serif}
 .card-head .pos{font-size:11.5px; color:var(--muted); font-style:italic}
@@ -568,7 +568,7 @@ footer{margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font
   border:1px solid var(--accent); background:var(--accent); color:#fff; box-shadow:0 3px 10px rgba(0,0,0,.15)
 }
 .empty{color:var(--muted); font-size:13px; padding:10px 0}
-.acts{position:absolute; right:12px; top:12px; display:flex; gap:6px}
+.acts{display:flex; gap:6px; margin-left:auto; flex:0 0 auto}
 .act{font:inherit; font-size:12px; line-height:1; padding:7px 11px; border-radius:8px; cursor:pointer;
   border:1px solid var(--line); background:#fff; color:#6f6a63; min-width:62px; white-space:nowrap}
 .act.star{border-color:#e6dcc4}
@@ -734,12 +734,12 @@ def _word_card(w: dict, interactive: bool, meta: str = "", show_note: bool = Tru
         dataset = ""
     return (
         f'<article class="card"{dataset}>'
-        f'{acts}'
         + (f'<div class="revmeta">{esc(meta)}</div>' if meta else "")
         + '<div class="card-head">'
         f'<span class="w">{esc(w["word"])}</span>'
         + (f'<span class="ph">{esc(w["phonetic"])}</span>' if w.get("phonetic") else "")
         + (f'<span class="pos">{esc(w["pos"])}</span>' if w.get("pos") else "")
+        + acts
         + "</div>"
         + (f'<div class="zh">{esc(w["zh"])}</div>' if w.get("zh") else "")
         + (f'<ul class="colloc">{collocs}</ul>' if collocs else "")
