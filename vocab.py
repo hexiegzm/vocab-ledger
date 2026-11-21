@@ -774,6 +774,10 @@ document.addEventListener('keydown', e => {
   }
 });
 
+if (location.hash) {
+  const name = location.hash.slice(1);
+  if (document.querySelector('.panel[data-panel="' + name + '"]')) show(name);
+}
 setInterval(() => { fetch('/ping').catch(() => {}); }, 60000);
 filter();
 """
@@ -1201,6 +1205,7 @@ def cmd_review(args) -> int:
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+    monday = parse_week(args.week) if getattr(args, "week", None) else week_monday(date.today())
     lock = threading.Lock()
     last = {"t": _time.time()}
     data = load()
@@ -1238,7 +1243,7 @@ def cmd_review(args) -> int:
             if self.path.split("?")[0] not in ("/", "/index.html"):
                 return self._send(404, b"not found", "text/plain; charset=utf-8")
             with lock:
-                page = render_app(load(), week_monday(date.today()), interactive=True)
+                page = render_app(load(), monday, interactive=True)
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
         def do_POST(self):
@@ -1392,6 +1397,7 @@ def build_parser() -> argparse.ArgumentParser:
                         aliases=["app"])
     rv.add_argument("--port", type=int, default=8765, help="端口，默认 8765，占用则自动顺延")
     rv.add_argument("--open", action="store_true", help="启动后打开浏览器")
+    rv.add_argument("--week", help="按哪一周显示（默认本周），如 2026-W46")
     rv.add_argument("--idle", type=int, default=30,
                     help="标签页关闭后多少分钟自动退出，默认 30，0 表示不退出")
     rv.set_defaults(func=cmd_review)
