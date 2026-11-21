@@ -850,7 +850,7 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
 
 
 def write_report(data: dict, monday: date, out: Path, max_review: int = 60,
-                 title: str | None = None) -> Path:
+                 title: str | None = None, touch_heartbeat: bool = True) -> Path:
     """渲染并落盘一份周报（单文件 HTML，内含五个可切换视图）。"""
     out = Path(out)
     doc = render_app(data, monday, max_review, title, interactive=False)
@@ -858,6 +858,8 @@ def write_report(data: dict, monday: date, out: Path, max_review: int = 60,
     out.write_text(doc, encoding="utf-8")
     log(f"report: {out} week={week_key(monday)} words={len(data['words'])}")
 
+    if not touch_heartbeat:
+        return out
     heartbeat = LOG_DIR / "last-report.json"
     previous = None
     if heartbeat.exists():
@@ -1157,6 +1159,24 @@ def cmd_review(args) -> int:
                         return self._send(400, b'{"ok":false}', "application/json")
                     save(d, backup=False)
                 log(f"review: {word} {field}={value}")
+                # 顺带刷新当周的静态报告，保证「页面」和「HTML」永远一致
+                try:
+                    wk = week_monday(date.today())
+                    target = None
+                    hb = LOG_DIR / "last-report.json"
+                    if hb.exists():
+                        try:
+                            info = json.loads(hb.read_text(encoding="utf-8"))
+                            if info.get("week"):
+                                wk = parse_week(info["week"])
+                            if info.get("path"):
+                                target = Path(info["path"])
+                        except Exception:
+                            pass
+                    write_report(d, wk, target or (REPORT_DIR / f"vocab-{week_key(wk)}.html"),
+                                 touch_heartbeat=False)
+                except Exception as exc:  # 报告失败不能影响这次点击
+                    log(f"review: report refresh failed: {exc}")
                 return self._send(200, b'{"ok":true}', "application/json")
             except Exception as exc:
                 return self._send(500, json.dumps({"ok": False, "error": str(exc)}).encode(), "application/json")
