@@ -825,6 +825,9 @@ def render_app(data: dict, monday: date, max_review: int = 60,
     h.append("</nav>")
     h.append('<input id="q" class="search" type="search" placeholder="搜单词或释义…" oninput="filter()">')
     h.append("</div>")
+    if not interactive:
+        h.append('<p class="hint no-print">这是<strong>只读版</strong>（生成好的 HTML 写不了文件）。'
+                 '要能点「☆ 收藏 / 斩」，在终端运行：<code>python vocab.py review --open</code></p>')
 
     for i, (key, label, count, body) in enumerate(panels):
         on = " on" if i == 0 else ""
