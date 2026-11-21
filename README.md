@@ -95,6 +95,8 @@ rm -rf data reports logs
 
 **Windows**：装完直接双击 `背词.cmd` 即可，不用开终端。
 
+没装 Python、或者版本低于 3.10 时，双击**不会一闪而过**——脚本会停下来告诉你缺什么、怎么补（包括「PATH 里的 python 其实是微软商店占位程序」这种情况）。
+
 ## 为什么做这个
 
 用 Anki 的人多半死在「录入」上，不是死在复习算法上。看见生词 → 建卡 → 填释义 → 加标签 → 选牌组，三次之后就懒得动了。
@@ -289,6 +291,7 @@ $ python vocab.py doctor --task VocabLedgerWeekly
 vocab-ledger/
 ├─ vocab.py                     参考实现（零依赖，单文件）
 ├─ 背词.cmd                     Windows 双击启动背词页
+├─ msg/                         出错时给用户看的提示文本
 ├─ SPEC.md                      协议：字段、状态、渲染契约
 ├─ AGENTS.md                    给 AI 的仓库内约定
 ├─ CLAUDE.md                    Claude Code 入口（引用 AGENTS.md）
