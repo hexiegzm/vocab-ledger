@@ -237,7 +237,7 @@ vocab-ledger/
 ├─ prompts/universal.md         给不能读写文件的 AI 用的提示词
 ├─ examples/words.sample.json   可直接导入的样例
 ├─ docs/                        调度说明、预览图
-└─ tests/                       45 个标准库单元测试
+└─ tests/                       48 个标准库单元测试
 ```
 
 ## 开发
