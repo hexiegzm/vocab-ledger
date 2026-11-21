@@ -31,7 +31,9 @@
 python vocab.py app --open
 ```
 
-（Windows 上可以把这条命令做成 `.cmd` 或快捷方式，双击就开；用 `pythonw.exe` 启动则没有黑窗口。）
+Windows 用户**双击仓库里的 `背词.cmd`** 就行——它用 `pythonw.exe` 启动，不弹黑窗口。
+
+macOS / Linux 用命令行：`python vocab.py app --open`（想双击就做个 `.command` 或 `.desktop` 文件）。
 
 ```
 浏览器弹出，一张张卡片
@@ -91,13 +93,7 @@ python vocab.py report --open
 rm -rf data reports logs
 ```
 
-**Windows 小技巧**：把下面三行存成 `背词.cmd`，双击即可，不占终端窗口。
-
-```bat
-@echo off
-cd /d "%~dp0"
-start "" pythonw vocab.py app --open
-```
+**Windows**：装完直接双击 `背词.cmd` 即可，不用开终端。
 
 ## 为什么做这个
 
@@ -193,6 +189,7 @@ python vocab.py weeks               # 按周统计新增
 
 # 界面
 python vocab.py app --open          # 背词页（review 是同一个命令的别名）
+python vocab.py app --week 2026-W46 # 看某一周的视图
 python vocab.py report --open       # 生成并打开周报
 python vocab.py report --week 2026-W46 --open
 python vocab.py weekly              # 补漏 + 出当周（幂等，给调度用）
@@ -291,6 +288,7 @@ $ python vocab.py doctor --task VocabLedgerWeekly
 ```
 vocab-ledger/
 ├─ vocab.py                     参考实现（零依赖，单文件）
+├─ 背词.cmd                     Windows 双击启动背词页
 ├─ SPEC.md                      协议：字段、状态、渲染契约
 ├─ AGENTS.md                    给 AI 的仓库内约定
 ├─ CLAUDE.md                    Claude Code 入口（引用 AGENTS.md）
