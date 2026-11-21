@@ -56,12 +56,14 @@ class CliTest(unittest.TestCase):
         self.assertEqual(vocab.main(["learn", "resilient", "mitigate"]), 0)
         self.assertTrue(all(w["learned"] for w in vocab.load()["words"]))
 
-    def test_report_writes_file_and_heartbeat(self):
+    def test_report_writes_four_pages_and_heartbeat(self):
         vocab.main(["add", "--file", str(self.batch)])
         self.assertEqual(vocab.main(["report"]), 0)
-        files = list(vocab.REPORT_DIR.glob("vocab-*.html"))
-        self.assertEqual(len(files), 1)
-        self.assertIn("还没背的", files[0].read_text(encoding="utf-8"))
+        files = sorted(p.name for p in vocab.REPORT_DIR.glob("*.html"))
+        self.assertEqual(len(files), 4, files)
+        self.assertEqual(len([f for f in files if "-t2" in f or "-fav" in f or "-kill" in f]), 3)
+        main = [f for f in files if "-t2" not in f and "-fav" not in f and "-kill" not in f][0]
+        self.assertIn("表一", (vocab.REPORT_DIR / main).read_text(encoding="utf-8"))
         info = json.loads((vocab.LOG_DIR / "last-report.json").read_text(encoding="utf-8"))
         self.assertEqual(info["words"], 2)
 

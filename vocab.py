@@ -497,8 +497,13 @@ a.stat{text-decoration:none; color:inherit; display:block; transition:border-col
 a.stat:hover{border-color:var(--accent)}
 .sec{border:1px solid var(--line); border-radius:10px; padding:4px 18px 16px; background:#fffefa; margin:0 0 16px; scroll-margin-top:18px}
 .sec h2{margin:14px 0 10px}
-.totop{display:inline-block; margin-top:12px; font-size:12px; color:var(--muted); text-decoration:none}
-.totop:hover{color:var(--accent)}
+.pnav{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 18px; padding-bottom:12px; border-bottom:1px solid var(--line)}
+.pnav a{font-size:12.5px; text-decoration:none; color:#3f3a33; border:1px solid var(--line);
+  border-radius:99px; padding:7px 13px; background:#fffefa}
+.pnav a b{color:var(--accent); margin-left:5px; font-weight:600}
+.pnav a:hover{border-color:var(--accent); color:var(--accent)}
+.pnav a.on{background:var(--accent); border-color:var(--accent); color:#fff}
+.pnav a.on b{color:#fff}
 .stat .n{font-size:24px; font-weight:700; color:var(--accent); line-height:1.2}
 .stat .l{font-size:11.5px; color:var(--muted); letter-spacing:.04em}
 h2{font-size:17px; margin:34px 0 12px; padding-left:10px; border-left:4px solid var(--accent); line-height:1.35}
@@ -586,12 +591,17 @@ def _cell(w: dict, text: str, cls: str = "") -> str:
     return f"<td{c}>{text}</td>"
 
 
-def render_html(data: dict, monday: date, max_review: int = 60, title: str | None = None) -> str:
-    sunday = monday + timedelta(days=6)
-    wk = week_key(monday)
-    wnum = wk.split("-W")[1]
-    words = data["words"]
+PAGES = (
+    ("main", "表一 · 本周新增", "表一"),
+    ("t2", "表二 · 不会的词库", "表二"),
+    ("fav", "收藏夹", "收藏夹"),
+    ("kill", "斩词", "斩词"),
+)
 
+
+def _week_stats(data: dict, monday: date) -> dict:
+    sunday = monday + timedelta(days=6)
+    words = data["words"]
     week_words = sorted([w for w in words if in_range(w.get("first_seen"), monday, sunday)],
                         key=lambda w: w["word"].lower())
     open_words = [w for w in words if not w.get("learned")]
@@ -603,152 +613,173 @@ def render_html(data: dict, monday: date, max_review: int = 60, title: str | Non
     learned_week = sorted([w for w in words if in_range(w.get("learned_at"), monday, sunday)],
                           key=lambda w: w["word"].lower())
     starred = sorted([w for w in words if w.get("starred")], key=lambda w: w["word"].lower())
-    killed_total = len(words) - len(open_words)
-    shown = open_words[:max_review]
+    killed_all = sorted([w for w in words if w.get("learned")],
+                        key=lambda w: (w.get("learned_at") or "", w["word"].lower()), reverse=True)
+    return {
+        "week_words": week_words,
+        "open_words": open_words,
+        "learned_week": learned_week,
+        "starred": starred,
+        "killed_all": killed_all,
+        "killed_total": len(words) - len(open_words),
+        "total": len(words),
+    }
 
-    def totop() -> str:
-        return '<a class="totop" href="#top">↑ 回到顶部</a>'
+
+def _nav(stem: str, active: str, st: dict) -> str:
+    counts = {
+        "main": len(st["week_words"]),
+        "t2": len(st["open_words"]),
+        "fav": len(st["starred"]),
+        "kill": st["killed_total"],
+    }
+    out = ['<nav class="pnav">']
+    for suffix, _title, label in PAGES:
+        href = f"{stem}.html" if suffix == "main" else f"{stem}-{suffix}.html"
+        cls = ' class="on"' if suffix == active else ""
+        out.append(f'<a href="{href}"{cls}>{label}<b>{counts[suffix]}</b></a>')
+    out.append("</nav>")
+    return "".join(out)
+
+
+def _table(words: list, with_note: bool = False, with_tag: bool = False,
+           with_status: bool = False, date_key: str = "first_seen") -> str:
+    heads = ['<th style="width:18%">单词</th>', '<th style="width:14%">音标</th>',
+             '<th style="width:22%">释义</th>', '<th style="width:26%">搭配</th>']
+    if with_note:
+        heads.append('<th style="width:12%">为什么记它</th>')
+    if with_tag:
+        heads.append('<th style="width:8%">标签</th>')
+    if with_status:
+        heads.append('<th style="width:8%">状态</th>')
+    heads.append(f'<th style="width:10%">{"斩于" if date_key == "learned_at" else "日期"}</th>')
+    rows = []
+    for w in words:
+        cells = [_wcell(w),
+                 _cell(w, esc(w.get("phonetic") or ""), "ph"),
+                 _cell(w, esc(w.get("zh") or "—")),
+                 _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")]
+        if with_note:
+            cells.append(_cell(w, esc(w.get("note") or "—"), "err-bad small"))
+        if with_tag:
+            cells.append(_cell(w, esc((w.get("tags") or ["未分类"])[0]), "tagcell"))
+        if with_status:
+            cells.append(_cell(w, "斩了" if w.get("learned") else "还没背", "tagcell"))
+        cells.append(_cell(w, esc(w.get(date_key) or ""), "small date"))
+        rows.append("<tr>" + "".join(cells) + "</tr>")
+    return ('<table class="grid"><thead><tr>' + "".join(heads) + "</tr></thead><tbody>"
+            + "".join(rows) + "</tbody></table>")
+
+
+def render_page(data: dict, monday: date, page: str, stem: str,
+                max_review: int = 60, title: str | None = None) -> str:
+    sunday = monday + timedelta(days=6)
+    wk = week_key(monday)
+    wnum = wk.split("-W")[1]
+    st = _week_stats(data, monday)
+    page_title = {p[0]: p[1] for p in PAGES}[page]
+
+    body: list[str] = []
+    if page == "main":
+        body.append(f'<h2>表一 · 本周新增 <span class="count">{len(st["week_words"])} 词</span></h2>')
+        body.append('<p class="hint">只装这一周记下来的词，是本周要背的全部内容。</p>')
+        if st["week_words"]:
+            body.append(_table(st["week_words"], with_note=True))
+        else:
+            body.append(f'<div class="empty">这周没有新记的词。<a href="{stem}-t2.html">去表二看看积压的</a>。</div>')
+    elif page == "t2":
+        shown = st["open_words"][:max_review]
+        count_txt = (f"{len(shown)} / {len(st['open_words'])} 词（超出上限未列出）"
+                     if len(st["open_words"]) > len(shown) else f"{len(st['open_words'])} 词")
+        body.append(f'<h2>表二 · 不会的词库 <span class="count">{count_txt}</span></h2>')
+        body.append('<p class="hint">全部还没背的词，按主题分组、组内字母序。背完一个就说一句「XX 会了」，它会从这里消失。</p>')
+        if shown:
+            search_js = (
+                "var v=this.value.toLowerCase();"
+                "document.querySelectorAll('#lib tbody tr').forEach(function(r){"
+                "r.style.display=r.textContent.toLowerCase().indexOf(v)>-1?'':'none'});"
+            )
+            body.append('<div class="no-print" style="margin:-6px 0 10px">'
+                        '<input class="search" id="q" type="search" '
+                        'placeholder="在词库里搜单词或释义…" '
+                        f'oninput="{search_js}">'
+                        "</div>")
+            body.append(_table(shown, with_tag=True).replace(
+                '<table class="grid">', '<table class="grid" id="lib">', 1))
+        else:
+            body.append('<div class="empty">词库里没有待背的词，干净了。</div>')
+        if len(st["open_words"]) > len(shown):
+            body.append(f'<p class="hint">另有 {len(st["open_words"]) - len(shown)} 个词未列入本期'
+                        f'（上限 {max_review}），可用 <code>vocab.py list</code> 查看。</p>')
+    elif page == "fav":
+        body.append(f'<h2>收藏夹 <span class="count">{len(st["starred"])} 词</span></h2>')
+        body.append('<p class="hint">★ 是你特意留下的词，斩掉之后仍然在这里。写作文前扫一眼。</p>')
+        if st["starred"]:
+            body.append(_table(st["starred"], with_status=True))
+        else:
+            body.append('<div class="empty">还没有收藏的词。背的时候觉得「这个写作能用」，说一句「收藏 XX」就行。</div>')
+    else:
+        body.append(f'<h2>斩词 <span class="count">本周 {len(st["learned_week"])} 词 · '
+                    f'累计 {st["killed_total"]} 词</span></h2>')
+        body.append('<p class="hint">已经背过、从表二移走的词，按斩掉时间倒序。</p>')
+        if st["learned_week"]:
+            body.append('<div class="chips" style="margin-bottom:16px">')
+            for w in st["learned_week"]:
+                body.append(f'<span class="chip"><span class="s">{esc(w["word"])}</span> '
+                            f'{esc(w.get("zh") or "")}</span>')
+            body.append("</div>")
+        if st["killed_all"]:
+            body.append(_table(st["killed_all"], with_tag=True, date_key="learned_at"))
+        else:
+            body.append('<div class="empty">还没斩过词。背完说一句「XX 斩了」，它就从表二消失。</div>')
 
     h = []
     h.append("<!DOCTYPE html>")
     h.append('<html lang="zh-CN"><head><meta charset="utf-8">')
     h.append('<meta name="viewport" content="width=device-width,initial-scale=1">')
-    h.append(f"<title>{esc(title or f'第 {int(wnum)} 周 生词报告')}</title>")
+    h.append(f"<title>{esc(title or f'第 {int(wnum)} 周 · {page_title}')}</title>")
     h.append(f"<style>{CSS}</style></head><body>")
     h.append('<div class="toolbar no-print"><button onclick="window.print()">打印 / 存为 PDF</button></div>')
-    h.append('<div class="page" id="top">')
-
+    h.append('<div class="page">')
     h.append("<header>")
     h.append('<div class="kicker">English Vocabulary · Weekly</div>')
-    h.append(f"<h1>第 {int(wnum)} 周 · 生词报告</h1>")
+    h.append(f"<h1>第 {int(wnum)} 周 · {page_title}</h1>")
     h.append(f'<div class="meta">{monday.isoformat()} — {sunday.isoformat()} · {wk} · 生成于 {now_iso()}</div>')
     h.append("</header>")
-
-    # 四张统计卡本身就是导航，点了直接跳到对应区块
-    h.append('<div class="stats">')
-    for anchor, num, label in (
-        ("#t1", len(week_words), "表一 · 本周新增"),
-        ("#t2", len(open_words), "表二 · 不会的词库"),
-        ("#fav", len(starred), "收藏夹"),
-        ("#kill", killed_total, "斩词（累计）"),
-    ):
-        h.append(f'<a class="stat" href="{anchor}"><div class="n">{num}</div><div class="l">{label}</div></a>')
-    h.append("</div>")
-
-    # ---------------- 表一 ----------------
-    h.append('<section class="sec" id="t1">')
-    h.append(f'<h2>表一 · 本周新增 <span class="count">{len(week_words)} 词</span></h2>')
-    h.append('<p class="hint">只装这一周记下来的词，是本周要背的全部内容。</p>')
-    if week_words:
-        h.append('<table class="grid"><thead><tr>'
-                 '<th style="width:16%">单词</th><th style="width:14%">音标</th>'
-                 '<th style="width:20%">释义</th><th style="width:24%">搭配</th>'
-                 '<th style="width:16%">为什么记它</th><th style="width:10%">日期</th></tr></thead><tbody>')
-        for w in week_words:
-            h.append(
-                f'<tr>' + _wcell(w)
-                + _cell(w, esc(w.get("phonetic") or ""), "ph")
-                + _cell(w, esc(w.get("zh") or "—"))
-                + _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")
-                + _cell(w, esc(w.get("note") or "—"), "err-bad small")
-                + _cell(w, esc(w.get("first_seen") or ""), "small date")
-                + "</tr>"
-            )
-        h.append("</tbody></table>")
-    else:
-        h.append('<div class="empty">这周没有新记的词。</div>')
-    h.append(totop())
+    h.append(_nav(stem, page, st))
+    h.append('<section class="sec">')
+    h.extend(body)
     h.append("</section>")
-
-    # ---------------- 表二 ----------------
-    h.append('<section class="sec" id="t2">')
-    count_txt = (f"{len(shown)} / {len(open_words)} 词（超出上限未列出）"
-                 if len(open_words) > len(shown) else f"{len(open_words)} 词")
-    h.append(f'<h2>表二 · 不会的词库 <span class="count">{count_txt}</span></h2>')
-    h.append('<p class="hint">全部还没背的词，按主题分组、组内按字母排。背完一个就说一句「XX 会了」，它会从这里消失。</p>')
-    if shown:
-        search_js = (
-            "var v=this.value.toLowerCase();"
-            "document.querySelectorAll('#lib tbody tr').forEach(function(r){"
-            "r.style.display=r.textContent.toLowerCase().indexOf(v)>-1?'':'none'});"
-        )
-        h.append('<div class="no-print" style="margin:-6px 0 10px">'
-                 '<input class="search" id="q" type="search" '
-                 'placeholder="在词库里搜单词或释义…" '
-                 f'oninput="{search_js}">'
-                 "</div>")
-        h.append('<table class="grid" id="lib"><thead><tr>'
-                 '<th style="width:18%">单词</th><th style="width:15%">音标</th>'
-                 '<th style="width:20%">释义</th><th style="width:26%">搭配</th>'
-                 '<th style="width:12%">标签</th><th style="width:11%">记录于</th></tr></thead><tbody>')
-        for w in shown:
-            h.append(
-                f'<tr>' + _wcell(w)
-                + _cell(w, esc(w.get("phonetic") or ""), "ph")
-                + _cell(w, esc(w.get("zh") or "—"))
-                + _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")
-                + _cell(w, esc((w.get("tags") or ["未分类"])[0]), "tagcell")
-                + _cell(w, esc(w.get("first_seen") or ""), "small date")
-                + "</tr>"
-            )
-        h.append("</tbody></table>")
-    else:
-        h.append('<div class="empty">词库里没有待背的词，干净了。</div>')
-    if len(open_words) > len(shown):
-        h.append(f'<p class="hint">另有 {len(open_words) - len(shown)} 个词未列入本期（上限 {max_review}），'
-                 f'可用 <code>vocab.py list</code> 查看，或调大 <code>--max-review</code>。</p>')
-    h.append(totop())
-    h.append("</section>")
-
-    # ---------------- 收藏夹 ----------------
-    h.append('<section class="sec" id="fav">')
-    h.append(f'<h2>收藏夹 <span class="count">{len(starred)} 词</span></h2>')
-    h.append('<p class="hint">★ 是你特意留下的词，斩掉之后仍然在这里。写作文前扫一眼。</p>')
-    if starred:
-        h.append('<table class="grid"><thead><tr>'
-                 '<th style="width:18%">单词</th><th style="width:14%">音标</th>'
-                 '<th style="width:22%">释义</th><th style="width:32%">搭配</th>'
-                 '<th style="width:14%">状态</th></tr></thead><tbody>')
-        for w in starred:
-            h.append(
-                f'<tr>' + _wcell(w)
-                + _cell(w, esc(w.get("phonetic") or ""), "ph")
-                + _cell(w, esc(w.get("zh") or "—"))
-                + _cell(w, esc("；".join(w.get("collocations") or []) or "—"), "small")
-                + _cell(w, "斩了" if w.get("learned") else "还没背", "tagcell")
-                + "</tr>"
-            )
-        h.append("</tbody></table>")
-    else:
-        h.append('<div class="empty">还没有收藏的词。背的时候觉得「这个写作能用」，说一句「收藏 XX」就行。</div>')
-    h.append(totop())
-    h.append("</section>")
-
-    # ---------------- 斩词 ----------------
-    h.append('<section class="sec" id="kill">')
-    h.append(f'<h2>斩词 <span class="count">本周 {len(learned_week)} 词 · 累计 {killed_total} 词</span></h2>')
-    if learned_week:
-        h.append('<div class="chips">')
-        for w in learned_week:
-            h.append(f'<span class="chip"><span class="s">{esc(w["word"])}</span> {esc(w.get("zh") or "")}</span>')
-        h.append("</div>")
-    else:
-        h.append('<div class="empty">这周还没斩过词。背完说一句「XX 斩了」，它就从表二消失。</div>')
-    h.append(totop())
-    h.append("</section>")
-
-    h.append(f'<footer>由 <code>vocab.py</code> 生成 · 数据源 data/words.json · '
-             f'共 {len(words)} 词 · 下期自动生成于每周日 20:00</footer>')
+    h.append(f'<footer>由 <code>vocab.py</code> 生成 · 数据源 data/words.json · 共 {st["total"]} 词 · '
+             f'下期自动生成于每周日 20:00</footer>')
     h.append("</div></body></html>")
     return "\n".join(h)
 
 
+def render_html(data: dict, monday: date, max_review: int = 60, title: str | None = None) -> str:
+    """兼容入口：只返回「表一」那一页。"""
+    return render_page(data, monday, "main", f"vocab-{week_key(monday)}", max_review, title)
+
+
+def render_pages(data: dict, monday: date, stem: str,
+                 max_review: int = 60, title: str | None = None) -> dict[str, str]:
+    return {page: render_page(data, monday, page, stem, max_review, title)
+            for page, _t, _l in PAGES}
+
+
 def write_report(data: dict, monday: date, out: Path, max_review: int = 60,
                  title: str | None = None) -> Path:
-    doc = render_html(data, monday, max_review=max_review, title=title)
+    """落盘一周的四个页面（表一/表二/收藏夹/斩词），返回表一那一页的路径。"""
+    out = Path(out)
+    if out.suffix.lower() not in (".html", ".htm"):
+        out = out.with_suffix(".html")
+    stem = out.with_suffix("").name
+    pages = render_pages(data, monday, stem, max_review, title)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(doc, encoding="utf-8")
-    log(f"report: {out} week={week_key(monday)} words={len(data['words'])}")
+    for page, doc in pages.items():
+        target = out if page == "main" else out.with_name(f"{stem}-{page}{out.suffix}")
+        target.write_text(doc, encoding="utf-8")
+    log(f"report: {out} week={week_key(monday)} words={len(data['words'])} pages={len(pages)}")
 
     heartbeat = LOG_DIR / "last-report.json"
     previous = None
